@@ -230,6 +230,18 @@ details p { color: var(--muted); font-size: .92rem; line-height: 1.65; margin: 1
 footer { max-width: 640px; margin: 0 auto; padding: 30px 20px 40px; text-align: center; border-top: 1px solid #f5e3ef; }
 footer p { font-size: .78rem; color: var(--muted); line-height: 1.65; }
 footer .logo { margin-bottom: 8px; }
+.foot-links { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px 16px; margin: 12px 0; font-size: .82rem; }
+.foot-links a { color: var(--muted); text-decoration: none; font-weight: 600; }
+.foot-links a:hover { color: var(--pink-deep); text-decoration: underline; }
+.foot-label { color: var(--muted); opacity: .7; }
+
+/* ---------- legal pages ---------- */
+.legal h1 { margin: 10px 0 4px; }
+.legal h2 { font-size: 1.15rem; margin: 26px 0 8px; }
+.legal p, .legal li { color: var(--muted); font-size: .92rem; line-height: 1.7; }
+.legal ul { padding-left: 20px; }
+.legal li { margin-bottom: 6px; }
+.legal a { color: var(--pink-deep); font-weight: 600; }
 
 @media (min-width: 560px) {
   h1 { font-size: 3rem; }

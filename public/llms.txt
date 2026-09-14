@@ -1,0 +1,38 @@
+# BabyPeek
+
+> BabyPeek is an AI future baby photo generator and AI baby predictor. Upload two parent photos and it dreams up what your baby could look like — a free sneak peek, then a $5 one-time unlock for the full portrait.
+
+## What it is
+- Entertainment product: an AI imagines a baby portrait blending visible features from two photos. It is NOT a genetic prediction, medical advice, or a promise of what any child will look like.
+- Built by MehyarSoft. Live at https://baby.mehyar.us/
+
+## How it works
+1. Upload two clear face photos (you and your partner, or any two people).
+2. Vision AI (Llama 3.2 Vision) studies eyes, hair, skin tone, and face shape from each photo.
+3. Image AI (FLUX) generates a photorealistic baby portrait blending both sets of traits, plus a separate faceless "tiny hand" teaser.
+4. You see the free teaser instantly. Enter your email and pay $5 (one-time, Stripe) to unlock and download the full high-resolution portrait.
+
+## Pricing
+- Free: AI teaser (faceless sneak peek of your baby).
+- $5 one-time: full high-resolution baby portrait + instant download. No subscription.
+
+## Privacy
+- Parent photos are processed in memory and never stored.
+- Only the AI-generated baby images are kept (to show back to you).
+- Email addresses are stored for unlock delivery and product updates; every marketing email carries a one-click unsubscribe link.
+
+## FAQ
+- **Is this a real prediction of my future child?** No — pure entertainment. Genetics is beautifully unpredictable.
+- **What do I get for $5?** The full high-res portrait + instant download. One-time payment, no subscription.
+- **Are my photos stored?** No. Uploads are processed in memory and never saved.
+- **How long does it take?** About 30 seconds from upload to sneak peek; unlocking is instant after checkout.
+
+## Links
+- App: https://baby.mehyar.us/
+- How it works: https://baby.mehyar.us/#how
+- Pricing: https://baby.mehyar.us/#pricing
+- FAQ: https://baby.mehyar.us/#faq
+- Privacy: https://baby.mehyar.us/privacy/
+- Terms: https://baby.mehyar.us/terms/
+- More apps by MehyarSoft: https://mehyar.us/apps
+- Contact: info@mehyar.us

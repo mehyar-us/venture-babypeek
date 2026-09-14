@@ -26,6 +26,16 @@ binding = "BILLING_DB"
 database_name = "mehyar_leads_prod"
 database_id = "e4f22065-e3e8-4772-87a8-51d4976be042"
 
+# Shared central contact store (mehyar-jobs D1) — every email signup
+# (teaser capture, checkout) is mirrored into email_contact with
+# brand='babypeek', so all product signups are queryable in one place.
+# Same table/system mehyar.jobs uses. Write-mostly for this worker
+# (inserts/updates + unsubscribe opt-outs).
+[[d1_databases]]
+binding = "CONTACTS_DB"
+database_name = "mehyar-jobs"
+database_id = "de494f9a-9da2-4123-8bb7-269473cca8a6"
+
 # NOTE: no [vars] secrets here and none needed — Workers AI / D1 / R2 bind
 # directly. Deploy ONLY via the GitHub Actions workflow
 # (.github/workflows/deploy.yml), never `wrangler pages deploy` from a repo

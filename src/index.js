@@ -65,6 +65,171 @@ function clientIp(request) {
   return request.headers.get("cf-connecting-ip") || "unknown";
 }
 
+// ── Central contact store (shared with mehyar.jobs) ──────────────────
+// Every email signup (teaser capture, checkout) is mirrored into the
+// email_contact table of the shared contacts D1 (brand = 'babypeek'),
+// so all signups across every product are queryable in one place.
+// Best-effort: sync failures are logged, never break the signup flow.
+
+function providerOf(email) {
+  const dom = String(email || "").split("@")[1] || "";
+  if (dom === "gmail.com" || dom === "googlemail.com") return "gmail";
+  if (["outlook.com", "hotmail.com", "live.com", "msn.com"].includes(dom))
+    return "outlook";
+  if (dom === "yahoo.com" || dom === "ymail.com" || dom.endsWith(".yahoo.com"))
+    return "yahoo";
+  if (["icloud.com", "me.com", "mac.com"].includes(dom)) return "apple";
+  return "other";
+}
+
+async function syncCentralContact(env, email, source) {
+  try {
+    const db = env.CONTACTS_DB;
+    if (!db) return;
+    const em = String(email || "").toLowerCase().trim();
+    if (!EMAIL_RE.test(em)) return;
+    const now = new Date().toISOString();
+    await db
+      .prepare(
+        `CREATE TABLE IF NOT EXISTS email_contact (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          email TEXT NOT NULL,
+          brand TEXT NOT NULL DEFAULT 'babypeek',
+          status TEXT NOT NULL DEFAULT 'pending',
+          source TEXT NOT NULL DEFAULT 'babypeek',
+          first_name TEXT, last_name TEXT, city TEXT, state TEXT, role_title TEXT,
+          provider TEXT NOT NULL DEFAULT 'other',
+          user_id INTEGER,
+          consent_log_json TEXT NOT NULL DEFAULT '[]',
+          sent_count INTEGER NOT NULL DEFAULT 0,
+          last_sent_at TEXT,
+          week_sent_count INTEGER NOT NULL DEFAULT 0,
+          week_start TEXT,
+          imported_at TEXT NOT NULL DEFAULT (datetime('now')),
+          created_at TEXT NOT NULL DEFAULT (datetime('now')),
+          UNIQUE(email, brand)
+        )`
+      )
+      .run();
+    const consent = JSON.stringify([
+      { ts: now, source, action: "opt_in", via: "babypeek-web" },
+    ]);
+    const ins = await db
+      .prepare(
+        `INSERT INTO email_contact (email, brand, status, source, provider, consent_log_json, imported_at)
+         VALUES (?, 'babypeek', 'pending', ?, ?, ?, ?)
+         ON CONFLICT(email, brand) DO NOTHING`
+      )
+      .bind(em, source, providerOf(em), consent, now)
+      .run();
+    if (!Number(ins && ins.meta && ins.meta.changes)) {
+      // Existing row: never resurrect an opted-out contact; otherwise
+      // refresh the source and append a consent record.
+      const row = await db
+        .prepare(
+          "SELECT id, status, consent_log_json FROM email_contact WHERE email=? AND brand='babypeek'"
+        )
+        .bind(em)
+        .first();
+      if (row && row.status !== "opted_out") {
+        let log = [];
+        try {
+          log = JSON.parse(row.consent_log_json || "[]");
+        } catch {
+          /* keep empty */
+        }
+        log.push({ ts: now, source, action: "opt_in", via: "babypeek-web" });
+        await db
+          .prepare(
+            "UPDATE email_contact SET source=?, consent_log_json=?, imported_at=? WHERE id=?"
+          )
+          .bind(source, JSON.stringify(log).slice(0, 4000), now, row.id)
+          .run();
+      }
+    }
+  } catch (e) {
+    console.error("central contact sync failed:", e && e.message);
+  }
+}
+
+// ── Unsubscribe tokens ───────────────────────────────────────────────
+// HMAC-signed one-click tokens (same shape as the mehyar.jobs system:
+// b64url(payload).hexsig over "unsub:<payload>"). BabyPeek mints its own
+// with UNSUBSCRIBE_SECRET. Every marketing email we send must include:
+//   https://baby.mehyar.us/api/unsubscribe?token=<token>
+// plus the sender's physical mailing address (CAN-SPAM).
+
+function b64urlEncode(bytes) {
+  let s = "";
+  for (let i = 0; i < bytes.length; i++) s += String.fromCharCode(bytes[i]);
+  return btoa(s).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+function b64urlDecode(s) {
+  s = String(s || "").replace(/-/g, "+").replace(/_/g, "/");
+  while (s.length % 4) s += "=";
+  const bin = atob(s);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+
+async function hmacHex(secret, msg) {
+  const key = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(secret),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"]
+  );
+  const sig = await crypto.subtle.sign(
+    "HMAC",
+    key,
+    new TextEncoder().encode(msg)
+  );
+  return [...new Uint8Array(sig)]
+    .map((x) => x.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+async function signUnsubscribe(email, env) {
+  const payload = b64urlEncode(
+    new TextEncoder().encode(
+      JSON.stringify({ em: String(email).toLowerCase().trim(), br: "babypeek" })
+    )
+  );
+  const sig = await hmacHex(env.UNSUBSCRIBE_SECRET, "unsub:" + payload);
+  return payload + "." + sig;
+}
+
+async function verifyUnsubscribe(token, env) {
+  try {
+    const secret = env.UNSUBSCRIBE_SECRET;
+    if (!secret || !token) return null;
+    const parts = String(token).split(".");
+    if (parts.length !== 2 || !parts[0] || !parts[1]) return null;
+    const expect = await hmacHex(secret, "unsub:" + parts[0]);
+    if (parts[1].length !== expect.length) return null;
+    let diff = 0;
+    for (let i = 0; i < parts[1].length; i++)
+      diff |= parts[1].charCodeAt(i) ^ expect.charCodeAt(i);
+    if (diff) return null;
+    const data = JSON.parse(new TextDecoder().decode(b64urlDecode(parts[0])));
+    const em = String((data && data.em) || "").toLowerCase().trim();
+    if (!EMAIL_RE.test(em)) return null;
+    return { email: em, brand: String((data && data.br) || "babypeek") };
+  } catch {
+    return null;
+  }
+}
+
+// Helper for future mailers (BabyPeek sends no marketing email today).
+// Kept next to the verifier so the footer snippet can't drift out of sync.
+async function unsubscribeUrlFor(email, env, origin) {
+  const t = await signUnsubscribe(email, env);
+  return origin + "/api/unsubscribe?token=" + t;
+}
+
 // NOTE (2026-09-14): llama-3.2-11b-vision-instruct 3030s ("Internal Server
 // Error") whenever a single call carries TWO image_url entries — even tiny
 // ones. One image per call works fine. So: two parallel single-image calls.
@@ -238,6 +403,8 @@ async function handleApi(request, env, ctx) {
     if (!/^[0-9a-f]{32}$/.test(id)) return json({ ok: false, error: "bad_id" }, 400);
     if (!EMAIL_RE.test(email)) return json({ ok: false, error: "invalid_email" }, 400);
     await db.prepare("UPDATE generations SET email=? WHERE id=?").bind(email, id).run();
+    // Mirror into the shared central contact store (best-effort).
+    ctx.waitUntil(syncCentralContact(env, email, "babypeek-teaser"));
     return json({ ok: true });
   }
 
@@ -251,6 +418,8 @@ async function handleApi(request, env, ctx) {
     const row = await db.prepare("SELECT id FROM generations WHERE id=?").bind(id).first();
     if (!row) return json({ ok: false, error: "unknown_id" }, 404);
     await db.prepare("UPDATE generations SET email=? WHERE id=?").bind(email, id).run();
+    // Mirror into the shared central contact store (best-effort).
+    ctx.waitUntil(syncCentralContact(env, email, "babypeek-checkout"));
     let r;
     try {
       r = await fetch(CHECKOUT_URL, {
@@ -322,6 +491,70 @@ async function handleApi(request, env, ctx) {
     if (url.searchParams.get("download") === "1")
       headers["content-disposition"] = 'attachment; filename="babypeek-baby.jpg"';
     return new Response(obj.body, { headers });
+  }
+
+  // GET /api/unsubscribe?token=… — one-click unsubscribe confirm page.
+  // The token is HMAC-signed, so no login is required.
+  if (path === "/api/unsubscribe" && request.method === "GET") {
+    const token = url.searchParams.get("token") || "";
+    const v = await verifyUnsubscribe(token, env);
+    if (!v)
+      return new Response("Invalid or expired unsubscribe link.", {
+        status: 400,
+        headers: { "content-type": "text/plain; charset=utf-8" },
+      });
+    const safeEmail = v.email
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;");
+    const safeToken = token.replace(/"/g, "&quot;");
+    return new Response(
+      `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Unsubscribe — BabyPeek</title><link rel="icon" type="image/svg+xml" href="/favicon.svg"><link rel="stylesheet" href="/styles.css"></head><body><main><section class="section legal" style="text-align:center"><div class="pill">👋 Sorry to see you go</div><h1>Unsubscribe?</h1><p class="lede">Stop BabyPeek emails to<br><b>${safeEmail}</b></p><form method="POST" action="/api/unsubscribe"><input type="hidden" name="token" value="${safeToken}"><button class="cta" type="submit">Yes, unsubscribe me</button></form><p class="tiny">One click, effective immediately. No login needed.</p></section></main></body></html>`,
+      { headers: { "content-type": "text/html; charset=utf-8" } }
+    );
+  }
+
+  // POST /api/unsubscribe — perform the opt-out (form or JSON).
+  if (path === "/api/unsubscribe" && request.method === "POST") {
+    let token = "";
+    const ct = request.headers.get("content-type") || "";
+    try {
+      if (ct.includes("application/json")) {
+        token = (await request.json().catch(() => ({}))).token || "";
+      } else {
+        const form = await request.formData().catch(() => null);
+        token = (form && String(form.get("token") || "")) || "";
+      }
+    } catch {
+      /* fall through to invalid_token */
+    }
+    const v = await verifyUnsubscribe(String(token || ""), env);
+    if (!v) return json({ ok: false, error: "invalid_token" }, 400);
+    let changed = false;
+    try {
+      if (env.CONTACTS_DB) {
+        const r = await env.CONTACTS_DB.prepare(
+          "UPDATE email_contact SET status='opted_out' WHERE email=? AND brand='babypeek' AND status != 'opted_out'"
+        )
+          .bind(v.email)
+          .run();
+        changed = Number(r && r.meta && r.meta.changes) > 0;
+      }
+    } catch (e) {
+      console.error("unsubscribe update failed:", e && e.message);
+    }
+    const isForm = !ct.includes("application/json");
+    if (isForm) {
+      const safeEmail = v.email
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;");
+      return new Response(
+        `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Unsubscribed — BabyPeek</title><link rel="icon" type="image/svg+xml" href="/favicon.svg"><link rel="stylesheet" href="/styles.css"></head><body><main><section class="section legal" style="text-align:center"><div class="pill">✅ Done</div><h1>You're unsubscribed</h1><p class="lede"><b>${safeEmail}</b> won't get BabyPeek emails anymore.</p><a class="cta" href="/">Back to BabyPeek</a></section></main></body></html>`,
+        { headers: { "content-type": "text/html; charset=utf-8" } }
+      );
+    }
+    return json({ ok: true, unsubscribed: changed });
   }
 
   return json({ ok: false, error: "not_found" }, 404);
