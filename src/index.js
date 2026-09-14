@@ -262,13 +262,37 @@ async function handleApi(request, env, ctx) {
     return json({ ok: true, checkout_url: data.checkout_url });
   }
 
-  // POST /api/redeem — link the Stripe success token to a generation
+  // POST /api/redeem — link the Stripe success token to a generation.
+  // The token is verified SERVER-TO-SERVER against the central billing
+  // ledger (BILLING_DB = mehyar_leads_prod.billing_payments): it must belong
+  // to a PAID baby-peek payment whose metadata names THIS generation.
+  // A token from an unpaid/abandoned checkout, or from another generation,
+  // can never unlock anything.
   if (path === "/api/redeem" && request.method === "POST") {
     const body = await request.json().catch(() => ({}));
     const id = String(body.id || "");
     const token = String(body.token || "").slice(0, 128);
-    if (!/^[0-9a-f]{32}$/.test(id) || !token)
+    if (!/^[0-9a-f]{32}$/.test(id) || !/^[0-9a-f]{64}$/.test(token))
       return json({ ok: false, error: "bad_request" }, 400);
+    let pay = null;
+    try {
+      pay = await env.BILLING_DB.prepare(
+        "SELECT product_id, status, metadata_json FROM billing_payments WHERE access_token=?"
+      )
+        .bind(token)
+        .first();
+    } catch {
+      return json({ ok: false, error: "verify_unavailable" }, 502);
+    }
+    if (!pay || pay.product_id !== PRODUCT_ID || pay.status !== "paid")
+      return json({ ok: false, error: "not_paid" }, 402);
+    let gid = "";
+    try {
+      gid = (JSON.parse(pay.metadata_json || "{}") || {}).gid || "";
+    } catch {
+      /* ignore malformed metadata */
+    }
+    if (gid !== id) return json({ ok: false, error: "token_mismatch" }, 403);
     await db.prepare("UPDATE generations SET access_token=? WHERE id=?").bind(token, id).run();
     return json({ ok: true });
   }

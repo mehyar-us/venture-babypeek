@@ -18,6 +18,14 @@ database_id = "ad1cb023-e356-4984-8479-4f3192b74d36"
 binding = "BABYPEEK_R2"
 bucket_name = "babypeek-images"
 
+# Central billing ledger (same Cloudflare account) — used ONLY for
+# server-to-server paid-token verification in POST /api/redeem.
+# Read-only in practice; this worker never writes to it.
+[[d1_databases]]
+binding = "BILLING_DB"
+database_name = "mehyar_leads_prod"
+database_id = "e4f22065-e3e8-4772-87a8-51d4976be042"
+
 # NOTE: no [vars] secrets here and none needed — Workers AI / D1 / R2 bind
 # directly. Deploy ONLY via the GitHub Actions workflow
 # (.github/workflows/deploy.yml), never `wrangler pages deploy` from a repo
