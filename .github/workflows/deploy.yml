@@ -25,5 +25,5 @@ jobs:
       - name: Smoke test
         run: |
           sleep 8
-          curl -fsS https://babypeek.mehyar500.workers.dev/api/status/00000000000000000000000000000000 \
+          curl -fsS https://babypeek.mehyar.workers.dev/api/status/00000000000000000000000000000000 \
             | grep -q "unknown_id" && echo "worker responding"
