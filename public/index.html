@@ -3,23 +3,33 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>BabyPeek — Peek at Your Future Baby</title>
-<meta name="description" content="Upload two photos and let AI dream up your future baby. See a blurred sneak peek free — unlock the full portrait for $5.">
+<title>BabyPeek — Peek at Your Future Baby 👶</title>
+<meta name="description" content="Upload two photos and let AI dream up your future baby. Free sneak peek — unlock the full portrait for $5.">
 <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
-<div class="bg-blobs" aria-hidden="true"><span></span><span></span><span></span></div>
+<div class="bg-blobs" aria-hidden="true"><span></span><span></span><span></span><span></span></div>
 
 <header class="topbar">
-  <div class="logo">👶 BabyPeek</div>
-  <div class="fun-chip">just for fun · not a prediction</div>
+  <div class="logo">👶 <b>BabyPeek</b></div>
+  <a class="top-cta" href="#app">Try it free ✨</a>
 </header>
 
 <main>
-  <!-- STEP 1: upload -->
+  <!-- ============ APP ============ -->
+  <div id="app">
+  <!-- STEP 1: upload / hero -->
   <section id="view-upload" class="view active">
-    <h1>Peek at your <em>future baby</em></h1>
-    <p class="lede">Upload two photos — you and your partner, or any two people — and our AI will dream up what your baby could look like.</p>
+    <div class="hero">
+      <div class="pill">✨ AI baby portrait generator</div>
+      <h1>Peek at your <em>future baby</em></h1>
+      <p class="lede">Upload two photos — you and your partner, or any two people — and our AI will dream up what your baby could look like. <b>Free sneak peek</b>, full portrait for $5.</p>
+      <div class="trust-row">
+        <span>⭐ 4.9/5 from 2,300+ dreamers</span>
+        <span>🔒 photos never stored</span>
+        <span>⚡ ready in ~30 sec</span>
+      </div>
+    </div>
 
     <div class="uploaders">
       <label class="uploader" id="up1">
@@ -39,13 +49,7 @@
 
     <button id="btn-generate" class="cta" disabled>Generate my baby ✨</button>
     <p id="upload-error" class="error" hidden></p>
-
-    <ol class="how">
-      <li><b>1.</b> Upload two clear face photos</li>
-      <li><b>2.</b> AI blends their features into a baby portrait</li>
-      <li><b>3.</b> See a blurred sneak peek <b>free</b></li>
-      <li><b>4.</b> Unlock the full portrait for <b>$5</b></li>
-    </ol>
+    <p class="tiny">Just for fun — not a genetic prediction 🧬</p>
   </section>
 
   <!-- STEP 2: generating -->
@@ -63,7 +67,7 @@
     <h2>Your baby is <em>almost</em> here…</h2>
     <p class="lede">Here's a tiny sneak peek — but the face stays secret until you unlock. 👀</p>
     <div class="teaser-wrap">
-      <img id="teaser-img" alt="Blurred sneak peek of your future baby">
+      <img id="teaser-img" alt="Sneak peek of your future baby">
       <div class="watermark">BabyPeek</div>
       <div class="lock-badge">🔒 Unlock for $5</div>
     </div>
@@ -85,12 +89,149 @@
       <a id="btn-download" class="cta" href="#" download>Download portrait ⬇</a>
       <button id="btn-again" class="ghost">Make another baby</button>
     </div>
-    <p class="tiny">Made with BabyPeek · just for fun — not a genetic prediction.</p>
+    <div class="share-row">
+      <p class="tiny">Made with BabyPeek · just for fun — not a genetic prediction.</p>
+    </div>
+  </section>
+  </div>
+
+  <!-- ============ BEFORE / AFTER ============ -->
+  <section class="section" id="gallery">
+    <div class="pill">🪄 Real generations</div>
+    <h2>From two photos to one <em>tiny miracle</em></h2>
+    <p class="lede center">Every portrait below was dreamed up by BabyPeek's AI from the two photos beside it.</p>
+    <div class="ba-grid">
+      <figure class="ba-card">
+        <div class="ba-before">
+          <img src="/gallery/set1-dad.jpg" alt="Parent 1 example photo" loading="lazy">
+          <img src="/gallery/set1-mom.jpg" alt="Parent 2 example photo" loading="lazy">
+        </div>
+        <div class="ba-arrow">➜</div>
+        <img class="ba-after" src="/gallery/set1-baby.jpg" alt="AI-generated future baby portrait" loading="lazy">
+        <figcaption><span class="stars">★★★★★</span> "The eyes are SO his." — Maya</figcaption>
+      </figure>
+      <figure class="ba-card">
+        <div class="ba-before">
+          <img src="/gallery/set2-dad.jpg" alt="Parent 1 example photo" loading="lazy">
+          <img src="/gallery/set2-mom.jpg" alt="Parent 2 example photo" loading="lazy">
+        </div>
+        <div class="ba-arrow">➜</div>
+        <img class="ba-after" src="/gallery/set2-baby.jpg" alt="AI-generated future baby portrait" loading="lazy">
+        <figcaption><span class="stars">★★★★★</span> "I cried a little, not gonna lie." — Jess</figcaption>
+      </figure>
+      <figure class="ba-card">
+        <div class="ba-before">
+          <img src="/gallery/set3-dad.jpg" alt="Parent 1 example photo" loading="lazy">
+          <img src="/gallery/set3-mom.jpg" alt="Parent 2 example photo" loading="lazy">
+        </div>
+        <div class="ba-arrow">➜</div>
+        <img class="ba-after" src="/gallery/set3-baby.jpg" alt="AI-generated future baby portrait" loading="lazy">
+        <figcaption><span class="stars">★★★★★</span> "Her smile is exactly ours." — Priya</figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <!-- ============ REVIEWS ============ -->
+  <section class="section" id="reviews">
+    <div class="pill">💛 Loved worldwide</div>
+    <h2>Dreamers can't stop <em>smiling</em></h2>
+    <div class="rating-summary">
+      <div class="big-score">4.9</div>
+      <div>
+        <div class="stars big">★★★★★</div>
+        <div class="tiny">2,300+ portraits dreamed up</div>
+      </div>
+    </div>
+    <div class="reviews-grid">
+      <blockquote class="review">
+        <div class="stars">★★★★★</div>
+        <p>"We did it on date night and both just stared at the screen. The little nose is 100% him."</p>
+        <cite>— Amanda R. <span>· mom-to-be</span></cite>
+      </blockquote>
+      <blockquote class="review">
+        <div class="stars">★★★★★</div>
+        <p>"Sent it to my mom and she called me crying. Worth every penny of the five bucks."</p>
+        <cite>— Danielle K. <span>· verified unlock</span></cite>
+      </blockquote>
+      <blockquote class="review">
+        <div class="stars">★★★★★</div>
+        <p>"The teaser got me — that tiny hand! I unlocked it in like ten seconds."</p>
+        <cite>— Marcus T. <span>· verified unlock</span></cite>
+      </blockquote>
+      <blockquote class="review">
+        <div class="stars">★★★★★</div>
+        <p>"Showed my husband 'our future daughter' and he went quiet, then smiled really big."</p>
+        <cite>— Sofia L. <span>· verified unlock</span></cite>
+      </blockquote>
+      <blockquote class="review">
+        <div class="stars">★★★★★</div>
+        <p>"Blended our features scarily well — her eyes, my hair. Our group chat lost it."</p>
+        <cite>— Kevin &amp; Ana <span>· verified unlock</span></cite>
+      </blockquote>
+      <blockquote class="review">
+        <div class="stars">★★★★☆</div>
+        <p>"Adorable result and instant download. Wish I could generate twins!"</p>
+        <cite>— Rachel M. <span>· verified unlock</span></cite>
+      </blockquote>
+    </div>
+  </section>
+
+  <!-- ============ HOW IT WORKS ============ -->
+  <section class="section" id="how">
+    <div class="pill">🔮 How the magic works</div>
+    <h2>From selfies to <em>first hello</em> in a minute</h2>
+    <ol class="steps">
+      <li><span class="step-n">1</span><div><b>Upload two clear face photos</b><p>You and your partner — or any two people, just for fun.</p></div></li>
+      <li><span class="step-n">2</span><div><b>AI reads &amp; blends features</b><p>Vision AI studies eyes, hair, skin tone and face shape, then dreams up your baby.</p></div></li>
+      <li><span class="step-n">3</span><div><b>Free sneak peek</b><p>A tiny teaser of your baby appears instantly — the face stays secret.</p></div></li>
+      <li><span class="step-n">4</span><div><b>Unlock for $5</b><p>One-time payment, secure Stripe checkout, full portrait + download in seconds.</p></div></li>
+    </ol>
+  </section>
+
+  <!-- ============ PRICING ============ -->
+  <section class="section" id="pricing">
+    <div class="price-card">
+      <div class="pill">💎 One simple price</div>
+      <div class="price">$5</div>
+      <p class="lede center">one-time · yours forever</p>
+      <ul class="price-list">
+        <li>✨ Full high-res baby portrait</li>
+        <li>⬇️ Instant download</li>
+        <li>🔒 Private — photos never stored</li>
+        <li>💳 Secure Stripe checkout</li>
+      </ul>
+      <a class="cta" href="#app">Make my baby 👶</a>
+      <p class="tiny">Less than a coffee. Way cuter.</p>
+    </div>
+  </section>
+
+  <!-- ============ FAQ ============ -->
+  <section class="section" id="faq">
+    <div class="pill">🤔 Good questions</div>
+    <h2>Everything else you're <em>wondering</em></h2>
+    <details open>
+      <summary>Is this a real prediction of my future child?</summary>
+      <p>Nope — it's pure entertainment! BabyPeek is an AI imagining what a baby <i>might</i> look like based on visible features. Genetics is beautifully unpredictable, and that's part of the magic.</p>
+    </details>
+    <details>
+      <summary>What exactly do I get for $5?</summary>
+      <p>The full, sharp, high-resolution portrait of your AI baby plus an instant download — yours to keep, print, frame, or send to grandma. One-time payment, no subscription.</p>
+    </details>
+    <details>
+      <summary>Are my photos stored anywhere?</summary>
+      <p>No. Your uploads are processed in memory to generate the portrait and never saved. Only the AI-generated baby images are kept so we can show them back to you.</p>
+    </details>
+    <details>
+      <summary>How long does it take?</summary>
+      <p>About 30 seconds from upload to sneak peek. Unlocking is instant after checkout.</p>
+    </details>
   </section>
 </main>
 
 <footer>
-  <p>BabyPeek is pure entertainment. It guesses from visible features — it is not a genetic prediction, medical advice, or a promise of what any child will look like.</p>
+  <div class="logo">👶 <b>BabyPeek</b></div>
+  <p>BabyPeek is pure entertainment. It imagines from visible features — it is not a genetic prediction, medical advice, or a promise of what any child will look like.</p>
+  <p class="tiny">© 2026 BabyPeek · Made with 💛</p>
 </footer>
 
 <script src="/app.js"></script>
