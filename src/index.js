@@ -114,10 +114,16 @@ async function runPipeline(env, id, b64a, b64b) {
       `Adorable newborn baby portrait blending these family traits: ${features}. ` +
       `Soft studio lighting, sweet peaceful expression, photorealistic, ultra detailed skin texture, ` +
       `centered head-and-shoulders composition, plain soft background`;
+    // Teaser strategy (2026-09-14): FLUX actively sharpens faces no matter how
+    // hard the prompt begs for blur — a "blurred face" teaser always leaked
+    // the face. So the teaser never contains a face at all: an extreme
+    // close-up of the newborn's tiny hand. Tender, intriguing, and there is
+    // literally no face in the pixels to recover.
     const teaserPrompt =
-      `Extremely blurry out-of-focus photograph of a newborn baby with these traits: ${features}. ` +
-      `Face completely unrecognizable, dreamy pastel bokeh, soft indistinct shapes only, ` +
-      `no sharp details anywhere, heavy gaussian blur look`;
+      `Extreme close-up macro photograph of a newborn baby's tiny hand gently wrapped around a parent's finger, ` +
+      `soft newborn skin with fine detail, shallow depth of field, warm soft studio lighting, dreamy and tender. ` +
+      `Baby's family traits: ${features}. ` +
+      `IMPORTANT: only the tiny hand and the finger are visible, absolutely no face, no eyes, no head in the frame.`;
     const [fullBytes, teaserBytes] = await Promise.all([
       genImage(env, fullPrompt),
       genImage(env, teaserPrompt),
