@@ -65,7 +65,10 @@ function clientIp(request) {
   return request.headers.get("cf-connecting-ip") || "unknown";
 }
 
-async function describeParents(env, b64a, b64b) {
+// NOTE (2026-09-14): llama-3.2-11b-vision-instruct 3030s ("Internal Server
+// Error") whenever a single call carries TWO image_url entries — even tiny
+// ones. One image per call works fine. So: two parallel single-image calls.
+async function describeOneParent(env, b64, label) {
   const out = await env.AI.run(VISION_MODEL, {
     messages: [
       {
@@ -74,22 +77,28 @@ async function describeParents(env, b64a, b64b) {
           {
             type: "text",
             text:
-              "These are two parent photos for a fun 'future baby' portrait generator. " +
-              "Describe each person's most distinctive inheritable facial features in one short phrase each: " +
+              "Describe this person's most distinctive inheritable facial features in one short phrase: " +
               "skin tone, hair color and texture, eye color and shape, face shape. " +
-              'Reply in exactly this format and nothing else: "Parent 1: <phrase> | Parent 2: <phrase>"',
+              "Reply with only the phrase, nothing else.",
           },
-          { type: "image_url", image_url: { url: "data:image/jpeg;base64," + b64a } },
-          { type: "image_url", image_url: { url: "data:image/jpeg;base64," + b64b } },
+          { type: "image_url", image_url: { url: "data:image/jpeg;base64," + b64 } },
         ],
       },
     ],
-    max_tokens: 220,
+    max_tokens: 120,
   });
   const text = (out && (out.response || (out.result && out.result.response))) || "";
-  const clean = String(text).replace(/\s+/g, " ").trim().slice(0, 400);
-  if (!clean) throw new Error("vision model returned no description");
-  return clean;
+  const clean = String(text).replace(/\s+/g, " ").trim().slice(0, 200);
+  if (!clean) throw new Error("vision model returned no description for " + label);
+  return `${label}: ${clean}`;
+}
+
+async function describeParents(env, b64a, b64b) {
+  const [a, b] = await Promise.all([
+    describeOneParent(env, b64a, "Parent 1"),
+    describeOneParent(env, b64b, "Parent 2"),
+  ]);
+  return `${a} | ${b}`;
 }
 
 async function genImage(env, prompt) {
