@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BabyPeek — Peek at Your Future Baby</title>
+<meta name="description" content="Upload two photos and let AI dream up your future baby. See a blurred sneak peek free — unlock the full portrait for $5.">
+<link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+<div class="bg-blobs" aria-hidden="true"><span></span><span></span><span></span></div>
+
+<header class="topbar">
+  <div class="logo">👶 BabyPeek</div>
+  <div class="fun-chip">just for fun · not a prediction</div>
+</header>
+
+<main>
+  <!-- STEP 1: upload -->
+  <section id="view-upload" class="view active">
+    <h1>Peek at your <em>future baby</em></h1>
+    <p class="lede">Upload two photos — you and your partner, or any two people — and our AI will dream up what your baby could look like.</p>
+
+    <div class="uploaders">
+      <label class="uploader" id="up1">
+        <input type="file" id="photo1" accept="image/*" hidden>
+        <span class="uplus">+</span>
+        <span class="ulabel">Parent 1</span>
+        <img id="prev1" alt="" hidden>
+      </label>
+      <div class="heart">❤</div>
+      <label class="uploader" id="up2">
+        <input type="file" id="photo2" accept="image/*" hidden>
+        <span class="uplus">+</span>
+        <span class="ulabel">Parent 2</span>
+        <img id="prev2" alt="" hidden>
+      </label>
+    </div>
+
+    <button id="btn-generate" class="cta" disabled>Generate my baby ✨</button>
+    <p id="upload-error" class="error" hidden></p>
+
+    <ol class="how">
+      <li><b>1.</b> Upload two clear face photos</li>
+      <li><b>2.</b> AI blends their features into a baby portrait</li>
+      <li><b>3.</b> See a blurred sneak peek <b>free</b></li>
+      <li><b>4.</b> Unlock the full portrait for <b>$5</b></li>
+    </ol>
+  </section>
+
+  <!-- STEP 2: generating -->
+  <section id="view-loading" class="view">
+    <div class="dream">
+      <div class="dream-baby">👶</div>
+      <div class="dream-dots"><span></span><span></span><span></span></div>
+    </div>
+    <h2>Dreaming up your baby…</h2>
+    <p class="lede" id="loading-sub">Reading tiny faces, mixing smiles — about 30 seconds.</p>
+  </section>
+
+  <!-- STEP 3: teaser + unlock -->
+  <section id="view-teaser" class="view">
+    <h2>Your baby is <em>almost</em> here…</h2>
+    <p class="lede">Here's a blurred sneak peek. Unlock the full portrait to see every tiny detail.</p>
+    <div class="teaser-wrap">
+      <img id="teaser-img" alt="Blurred sneak peek of your future baby">
+      <div class="watermark">BabyPeek</div>
+      <div class="lock-badge">🔒 Unlock for $5</div>
+    </div>
+    <div class="email-row">
+      <input type="email" id="email" placeholder="you@example.com" autocomplete="email" inputmode="email">
+      <button id="btn-unlock" class="cta">Unlock full portrait — $5</button>
+    </div>
+    <p id="teaser-error" class="error" hidden></p>
+    <p class="tiny">One-time payment · Secure checkout via Stripe · Instant unlock</p>
+  </section>
+
+  <!-- STEP 4: unlocked -->
+  <section id="view-unlocked" class="view">
+    <h2>Say hello to <em>your future baby</em> 🎉</h2>
+    <div class="full-wrap">
+      <img id="full-img" alt="Your future baby portrait">
+    </div>
+    <div class="btn-row">
+      <a id="btn-download" class="cta" href="#" download>Download portrait ⬇</a>
+      <button id="btn-again" class="ghost">Make another baby</button>
+    </div>
+    <p class="tiny">Made with BabyPeek · just for fun — not a genetic prediction.</p>
+  </section>
+</main>
+
+<footer>
+  <p>BabyPeek is pure entertainment. It guesses from visible features — it is not a genetic prediction, medical advice, or a promise of what any child will look like.</p>
+</footer>
+
+<script src="/app.js"></script>
+</body>
+</html>

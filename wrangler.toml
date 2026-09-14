@@ -1,0 +1,24 @@
+name = "babypeek"
+main = "src/index.js"
+compatibility_date = "2026-09-01"
+
+# Static frontend (landing + app). API routes are handled by src/index.js.
+[assets]
+directory = "./public"
+
+[ai]
+binding = "AI"
+
+[[d1_databases]]
+binding = "BABYPEEK_DB"
+database_name = "babypeek_prod"
+database_id = "ad1cb023-e356-4984-8479-4f3192b74d36"
+
+[[r2_buckets]]
+binding = "BABYPEEK_R2"
+bucket_name = "babypeek-images"
+
+# NOTE: no [vars] secrets here and none needed — Workers AI / D1 / R2 bind
+# directly. Deploy ONLY via the GitHub Actions workflow
+# (.github/workflows/deploy.yml), never `wrangler pages deploy` from a repo
+# directory (that wipes dashboard env vars on Pages projects).
