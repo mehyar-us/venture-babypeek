@@ -2,9 +2,10 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+<!-- TRACKING:GA4-GTM -->
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>BabyPeek — Future Baby Photo Generator | AI Baby Predictor</title>
-<meta name="description" content="Wondering what will your baby look like? BabyPeek is the AI future baby photo generator: upload two photos, get a free sneak peek of your AI baby, unlock the full portrait for $5.">
+<meta name="description" content="BabyPeek is the AI future baby photo generator: upload two photos, get a free sneak peek of your baby, then unlock the full portrait for just $5.">
 <link rel="canonical" href="https://baby.mehyar.us/">
 <meta name="robots" content="index, follow">
 <meta name="theme-color" content="#ffd6e4">
@@ -32,11 +33,13 @@
   "@context": "https://schema.org",
   "@graph": [
     {
-      "@type": "Product",
-      "name": "BabyPeek — AI Future Baby Portrait",
+      "@type": "SoftwareApplication",
+      "name": "BabyPeek",
+      "url": "https://baby.mehyar.us/",
       "image": "https://baby.mehyar.us/gallery/set1-baby.jpg",
       "description": "AI future baby photo generator: upload two parent photos and get a photorealistic portrait of what your baby could look like. Free teaser, $5 one-time unlock for the full portrait.",
-      "brand": { "@type": "Brand", "name": "BabyPeek" },
+      "applicationCategory": "EntertainmentApplication",
+      "operatingSystem": "Web",
       "offers": {
         "@type": "Offer",
         "url": "https://baby.mehyar.us/",
@@ -44,7 +47,11 @@
         "price": "5",
         "availability": "https://schema.org/InStock"
       },
-      "aggregateRating": { "@type": "AggregateRating", "ratingValue": "4.9", "reviewCount": "2300" }
+      "provider": {
+        "@type": "Organization",
+        "name": "MehyarSoft LLC",
+        "url": "https://mehyar.us"
+      }
     },
     {
       "@type": "FAQPage",

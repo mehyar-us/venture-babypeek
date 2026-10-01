@@ -421,11 +421,13 @@ async function handleApi(request, env, ctx) {
     // Mirror into the shared central contact store (best-effort).
     ctx.waitUntil(syncCentralContact(env, email, "babypeek-checkout"));
     let r;
+    const payload = { product_id: PRODUCT_ID, email, params: { gid: id } };
+    if (body.test === true) payload.test = true; // QA only; live UI never sends this
     try {
       r = await fetch(CHECKOUT_URL, {
         method: "POST",
         headers: { "content-type": "application/json", "User-Agent": BROWSER_UA },
-        body: JSON.stringify({ product_id: PRODUCT_ID, email, params: { gid: id } }),
+        body: JSON.stringify(payload),
         signal: AbortSignal.timeout(20000),
       });
     } catch {
