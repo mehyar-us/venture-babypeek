@@ -33,13 +33,11 @@
     el.hidden = !msg;
   }
 
-  // ---- photo pickers: preview + downscale to max 1024px (saves AI tokens) ----
-  function bindPicker(inputId, prevId, upId, set) {
-    const input = $(inputId);
-    input.addEventListener("change", () => {
-      const f = input.files && input.files[0];
-      if (!f) return;
-      if (!f.type.startsWith("image/")) { err("upload-error", "Please pick an image file."); return; }
+  // ---- photo pipeline: downscale to max 1024px (saves AI tokens) ----
+  // Extracted 2026-10-06 (sample-couple mode): identical payload shape for
+  // uploads and sample photos, so the server path needs no change.
+  function downscaleBlob(f) {
+    return new Promise((resolve, reject) => {
       const img = new Image();
       const objUrl = URL.createObjectURL(f);
       img.onload = () => {
@@ -50,25 +48,68 @@
         c.width = Math.round(img.width * scale);
         c.height = Math.round(img.height * scale);
         c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
-        c.toBlob((blob) => {
-          if (!blob) { err("upload-error", "Could not read that photo — try another."); return; }
-          set(blob);
-          const prev = $(prevId);
-          prev.src = URL.createObjectURL(blob);
-          prev.hidden = false;
-          $(upId).classList.add("filled");
-          $(upId).querySelector(".uplus").style.display = "none";
-          $(upId).querySelector(".ulabel").style.display = "none";
-          err("upload-error", "");
-          $("btn-generate").disabled = !(photo1 && photo2);
-        }, "image/jpeg", 0.9);
+        c.toBlob((blob) => (blob ? resolve(blob) : reject(new Error("downscale"))), "image/jpeg", 0.9);
       };
-      img.onerror = () => err("upload-error", "Could not read that photo — try another.");
+      img.onerror = () => { URL.revokeObjectURL(objUrl); reject(new Error("decode")); };
       img.src = objUrl;
+    });
+  }
+  function fillUploader(blob, prevId, upId) {
+    const prev = $(prevId);
+    prev.src = URL.createObjectURL(blob);
+    prev.hidden = false;
+    $(upId).classList.add("filled");
+    $(upId).querySelector(".uplus").style.display = "none";
+    $(upId).querySelector(".ulabel").style.display = "none";
+    err("upload-error", "");
+    $("btn-generate").disabled = !(photo1 && photo2);
+  }
+  function bindPicker(inputId, prevId, upId, set) {
+    const input = $(inputId);
+    input.addEventListener("change", () => {
+      const f = input.files && input.files[0];
+      if (!f) return;
+      if (!f.type.startsWith("image/")) { err("upload-error", "Please pick an image file."); return; }
+      downscaleBlob(f).then(
+        (blob) => { set(blob); fillUploader(blob, prevId, upId); },
+        () => err("upload-error", "Could not read that photo — try another.")
+      );
     });
   }
   bindPicker("photo1", "prev1", "up1", (b) => (photo1 = b));
   bindPicker("photo2", "prev2", "up2", (b) => (photo2 = b));
+
+  // ---- sample couples (friction-killer, staged 2026-10-06): no photos handy?
+  // Tap a sample pair -> same downscale pipeline -> same /api/generate free
+  // path (the 1-free/IP/24h guard and free_limit UX apply unchanged).
+  // Compliance: samples are labeled as samples, never as user results (item 11).
+  async function useSample(setNum) {
+    err("upload-error", "");
+    const btn = document.querySelector('.sample-pick[data-set="' + setNum + '"]');
+    document.querySelectorAll(".sample-pick").forEach((b) => b.classList.remove("active"));
+    if (btn) { btn.classList.add("active"); btn.disabled = true; }
+    try {
+      const [b1, b2] = await Promise.all([
+        fetch("/gallery/set" + setNum + "-dad.jpg").then((r) => {
+          if (!r.ok) throw new Error("sample1"); return r.blob();
+        }),
+        fetch("/gallery/set" + setNum + "-mom.jpg").then((r) => {
+          if (!r.ok) throw new Error("sample2"); return r.blob();
+        }),
+      ]);
+      const [d1, d2] = await Promise.all([downscaleBlob(b1), downscaleBlob(b2)]);
+      photo1 = d1; photo2 = d2;
+      fillUploader(d1, "prev1", "up1");
+      fillUploader(d2, "prev2", "up2");
+    } catch (e) {
+      err("upload-error", "Could not load the sample photos — check your connection and try again.");
+      document.querySelectorAll(".sample-pick").forEach((b) => b.classList.remove("active"));
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  }
+  document.querySelectorAll(".sample-pick").forEach((b) =>
+    b.addEventListener("click", () => useSample(b.dataset.set)));
 
   // ---- generate ----
   let pollTimer = null;

@@ -113,6 +113,24 @@ h1 em, h2 em { font-style: normal; background: linear-gradient(135deg, var(--pin
 .error { color: #d33f6e; font-size: .88rem; margin-top: 10px; text-align: center; }
 .tiny { font-size: .78rem; color: var(--muted); text-align: center; margin-top: 12px; line-height: 1.5; }
 
+/* ---------- sample couples (friction-killer, staged 2026-10-06) ---------- */
+.sample-row { margin-top: 14px; text-align: center; }
+.sample-label { font-size: .85rem; color: var(--muted); margin: 0 0 10px; }
+.sample-picks { display: flex; gap: 10px; justify-content: center; }
+.sample-pick {
+  border: 2px solid #ecd9ec; background: #fff; border-radius: 16px;
+  padding: 8px 8px 6px; cursor: pointer; font-family: inherit;
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  transition: border-color .15s, transform .15s, box-shadow .15s;
+}
+.sample-pick:hover { border-color: var(--pink); transform: translateY(-2px); box-shadow: var(--shadow); }
+.sample-pick.active { border-color: var(--pink-deep); box-shadow: var(--shadow); }
+.sample-pick:focus-visible { outline: 3px solid var(--pink); outline-offset: 2px; }
+.sample-pick:disabled { opacity: .6; cursor: wait; }
+.sample-thumbs { display: flex; gap: 4px; }
+.sample-thumbs img { width: 44px; height: 44px; object-fit: cover; border-radius: 10px; }
+.sample-name { font-size: .72rem; font-weight: 700; color: var(--ink); }
+
 /* ---------- loading ---------- */
 .dream { text-align: center; margin: 60px 0 10px; }
 .dream-baby { font-size: 4.5rem; animation: float 2.4s ease-in-out infinite; }
