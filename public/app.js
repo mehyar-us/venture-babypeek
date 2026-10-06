@@ -12,6 +12,12 @@
   // Meta Purchase events — fired once per paid unlock (dedupe per generation id).
   const purchaseFired = new Set();
 
+  // Meta Lead events — fired once per completed free render (dedupe per
+  // generation id). Closes the mid-funnel gap between PageView and
+  // InitiateCheckout: gives the Meta fork a conversion-ready event
+  // (Lead objective) and feeds the 10/7 kill-clock adjudication.
+  const leadFired = new Set();
+
   // ---- share-visit tracking: closes the share-loop measurement gap.
   //    A share recipient lands on ?utm_source=babypeek_share&utm_medium=webshare —
   //    this fires once per load so the viral leg is visible in Events Manager
@@ -131,6 +137,12 @@
               const em = localStorage.getItem(LS_EMAIL);
               if (em) $("email").value = em;
               show("view-free");
+              // Lead attribution (E16): free render completed = mid-funnel
+              // conversion signal. Fires once per generation id.
+              if (gid && !leadFired.has(gid)) {
+                leadFired.add(gid);
+                try { window.fbq && fbq("track", "Lead"); } catch {}
+              }
             };
             probe.onerror = () => {
               show("view-upload");
