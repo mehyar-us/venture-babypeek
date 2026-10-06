@@ -153,6 +153,18 @@ h1 em, h2 em { font-style: normal; background: linear-gradient(135deg, var(--pin
 .email-row input:focus { border-color: var(--pink); box-shadow: 0 0 0 4px rgba(255, 143, 179, .15); }
 .btn-row { display: grid; gap: 2px; }
 
+/* ---------- share row (unlocked view): every baby photo is the ad ---------- */
+.share-row { margin-top: 14px; display: grid; gap: 4px; }
+.share-btn {
+  display: block; width: 100%; padding: 15px; border: 0; border-radius: 999px;
+  font-size: 1.02rem; font-weight: 800; color: #fff; cursor: pointer; font-family: inherit;
+  background: linear-gradient(135deg, #57c98a, #3aa86c);
+  box-shadow: 0 10px 26px rgba(87, 201, 138, .45);
+  transition: transform .15s, opacity .2s, box-shadow .2s;
+}
+.share-btn:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 14px 32px rgba(87, 201, 138, .55); }
+.share-btn:disabled { opacity: .6; cursor: default; box-shadow: none; }
+
 /* ---------- before / after ---------- */
 .ba-grid { display: grid; gap: 22px; margin-top: 26px; }
 .ba-card {

@@ -408,6 +408,19 @@ async function handleApi(request, env, ctx) {
     return json({ ok: true });
   }
 
+  // POST /api/subscribe — standalone homepage email capture (pre-purchase list).
+  // No generation id needed; mirrors into the shared central contact store
+  // with brand='babypeek' so the per-brand CRM list (babypeek_subscribers)
+  // can be backfilled from it. Suppression-safe: syncCentralContact never
+  // re-activates an unsubscribed row.
+  if (path === "/api/subscribe" && request.method === "POST") {
+    const body = await request.json().catch(() => ({}));
+    const email = String(body.email || "").toLowerCase().trim();
+    if (!EMAIL_RE.test(email)) return json({ ok: false, error: "invalid_email" }, 400);
+    ctx.waitUntil(syncCentralContact(env, email, "babypeek-homepage"));
+    return json({ ok: true });
+  }
+
   // POST /api/checkout — proxy to the centralized mehyar-web Stripe checkout
   if (path === "/api/checkout" && request.method === "POST") {
     const body = await request.json().catch(() => ({}));
@@ -422,6 +435,9 @@ async function handleApi(request, env, ctx) {
     ctx.waitUntil(syncCentralContact(env, email, "babypeek-checkout"));
     let r;
     const payload = { product_id: PRODUCT_ID, email, params: { gid: id } };
+    if (body.attribution && typeof body.attribution === "object") {
+      payload.params.attribution = body.attribution; // <=512B enforced server-side
+    }
     if (body.test === true) payload.test = true; // QA only; live UI never sends this
     try {
       r = await fetch(CHECKOUT_URL, {

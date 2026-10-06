@@ -7,6 +7,7 @@ BabyPeek is an AI future baby photo generator by MehyarSoft LLC. Upload two pare
 - / — landing page with the generator, free teaser, and $5 Stripe checkout
 - /privacy/ — privacy policy: what is collected, what is never stored, how to unsubscribe
 - /terms/ — terms of service: entertainment-only disclaimer, the $5 unlock, acceptable use
+- /ai-baby-photo-guide/ — evergreen GEO guide: how AI baby photo generators work, FAQ (accuracy, photo safety, free vs $5, shareability), parent→baby example set, CTA to the free teaser
 
 ## Pricing
 

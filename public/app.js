@@ -9,6 +9,20 @@
 
   let photo1 = null, photo2 = null, gid = localStorage.getItem(LS_GID) || null;
 
+  // Meta Purchase events — fired once per paid unlock (dedupe per generation id).
+  const purchaseFired = new Set();
+
+  // ---- share-visit tracking: closes the share-loop measurement gap.
+  //    A share recipient lands on ?utm_source=babypeek_share&utm_medium=webshare —
+  //    this fires once per load so the viral leg is visible in Events Manager
+  //    (share k-factor = ShareVisit events / BabyPeekShare events). No PII.
+  try {
+    const qs = new URLSearchParams(window.location.search);
+    if (qs.get("utm_source") === "babypeek_share") {
+      window.fbq && fbq("trackCustom", "BabyPeekShareVisit", { medium: qs.get("utm_medium") || "webshare" });
+    }
+  } catch {}
+
   function show(name) {
     views.forEach((v) => $(v).classList.toggle("active", v === name));
     window.scrollTo({ top: 0, behavior: "smooth" });
@@ -123,10 +137,15 @@
       const r = await fetch("/api/checkout", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ id: gid, email }),
+        body: JSON.stringify({
+          id: gid,
+          email,
+          attribution: window.MSRC ? window.MSRC.get() : undefined,
+        }),
       });
       const d = await r.json();
       if (!d.ok || !d.checkout_url) throw new Error(d.error || "checkout_failed");
+      try { window.fbq && fbq("track", "InitiateCheckout", { value: 5.0, currency: "USD" }); } catch (e2) {}
       window.location.href = d.checkout_url;
     } catch (e) {
       err("teaser-error", "Checkout hiccup — please try again in a moment.");
@@ -153,6 +172,12 @@
       $("full-img").src = src;
       $("btn-download").href = src + "&download=1";
       show("view-unlocked");
+      // Purchase attribution for the Meta test (E16): redeem success = paid.
+      // Pixel-side signal closes the D1-only attribution gap for the 10/7 kill clock.
+      if (!purchaseFired.has(id)) {
+        purchaseFired.add(id);
+        try { window.fbq && fbq("track", "Purchase", { value: 5.0, currency: "USD" }); } catch {}
+      }
       // clean the URL (keep the token out of shared links)
       history.replaceState(null, "", window.location.pathname);
       return true;
@@ -166,6 +191,80 @@
     gid = null; photo1 = photo2 = null;
     window.location.href = "/";
   });
+
+  // ---- share row (unlocked view): every baby photo is the ad.
+  //    Shares ONLY the clean homepage funnel URL (never the tokenized /api/full
+  //    image — recipient replays the free flow themselves). Native sheet on
+  //    mobile (→ family group chat), clipboard fallback on desktop.
+  const shareBtn = $("btn-share");
+  let shareFired = false;
+  if (shareBtn) {
+    shareBtn.addEventListener("click", async () => {
+      const shareUrl = "https://baby.mehyar.us/?utm_source=babypeek_share&utm_medium=webshare";
+      const shareText = "I just tried BabyPeek — free sneak peek of what your baby could look like 👀";
+      let method = "none";
+      try {
+        if (navigator.share) {
+          await navigator.share({ title: "BabyPeek 👶", text: shareText, url: shareUrl });
+          method = "native";
+        } else {
+          await navigator.clipboard.writeText(shareText + " " + shareUrl);
+          method = "clipboard";
+        }
+      } catch (e) {
+        // Dismissed sheet (AbortError) or clipboard denied — one quiet retry path.
+        if (e && e.name !== "AbortError") {
+          try { await navigator.clipboard.writeText(shareText + " " + shareUrl); method = "clipboard"; } catch {}
+        } else return;
+      }
+      if (!shareFired && method !== "none") {
+        shareFired = true;
+        try { window.fbq && fbq("trackCustom", "BabyPeekShare", { method }); } catch {}
+      }
+      const prev = shareBtn.textContent;
+      shareBtn.textContent = "💬 Link ready — send it! ✅";
+      shareBtn.disabled = true;
+      setTimeout(() => { shareBtn.textContent = prev; shareBtn.disabled = false; }, 4000);
+    });
+  }
+
+  // ---- standalone homepage capture → POST /api/subscribe ----
+  const notifyBtn = $("btn-notify");
+  if (notifyBtn) {
+    notifyBtn.addEventListener("click", async () => {
+      const input = $("notify-email");
+      const msg = $("notify-msg");
+      const email = (input.value || "").trim().toLowerCase();
+      msg.hidden = true;
+      if (!EMAIL_RE.test(email)) {
+        msg.textContent = "Please enter a valid email address.";
+        msg.hidden = false;
+        input.focus();
+        return;
+      }
+      notifyBtn.disabled = true;
+      notifyBtn.textContent = "Saving…";
+      try {
+        const r = await fetch("/api/subscribe", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ email }),
+        });
+        const d = await r.json().catch(() => ({}));
+        if (!r.ok || !d.ok) throw new Error(d.error || "subscribe_failed");
+        msg.textContent = "💛 You're on the list — talk soon!";
+        msg.hidden = false;
+        input.value = "";
+        input.disabled = true;
+        notifyBtn.textContent = "You're in ✓";
+      } catch {
+        msg.textContent = "Hmm, that didn't go through — please try again.";
+        msg.hidden = false;
+        notifyBtn.disabled = false;
+        notifyBtn.textContent = "Remind me 💛";
+      }
+    });
+  }
 
   redeemFromUrl();
 })();

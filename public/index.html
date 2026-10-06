@@ -1,6 +1,24 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+<!-- Meta Pixel Code (BabyPeek Pixel 1615773453895774) -->
+<script>
+!function(f,b,e,v,n,t,s)
+{if(f.fbq)return;n=f.fbq=function(){n.callMethod?
+n.callMethod.apply(n,arguments):n.queue.push(arguments)};
+if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';
+n.queue=[];t=b.createElement(e);t.async=!0;
+t.src=v;s=b.getElementsByTagName(e)[0];
+s.parentNode.insertBefore(t,s)}(window, document,'script',
+'https://connect.facebook.net/en_US/fbevents.js');
+fbq('init', '1615773453895774');
+fbq('track', 'PageView');
+</script>
+<noscript><img height="1" width="1" style="display:none"
+src="https://www.facebook.com/tr?id=1615773453895774&ev=PageView&noscript=1"
+/></noscript>
+<!-- End Meta Pixel Code -->
+
 <meta charset="UTF-8">
 <!-- TRACKING:GA4-GTM -->
 <!-- Google Tag Manager -->
@@ -10,6 +28,8 @@
 <script async src="https://www.googletagmanager.com/gtag/js?id=G-RPFFDM7Y81"></script>
 <script>window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}gtag('js',new Date());gtag('config','G-RPFFDM7Y81');</script>
 <!-- End Google Analytics 4 -->
+<!-- MSRC first-touch attribution capture -->
+<script src="/attr-capture.js" defer></script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>BabyPeek — Future Baby Photo Generator | AI Baby Predictor</title>
 <meta name="description" content="BabyPeek is the AI future baby photo generator: upload two photos, get a free sneak peek of your baby, then unlock the full portrait for just $5.">
@@ -168,7 +188,7 @@
       <button id="btn-unlock" class="cta">Unlock full portrait — $5</button>
     </div>
     <p id="teaser-error" class="error" hidden></p>
-    <p class="tiny">One-time payment · Secure checkout via Stripe · Instant unlock</p>
+    <p class="tiny">One-time payment · Same portraits others sell for $9–$29 · Secure checkout via Stripe · Instant unlock</p>
   </section>
 
   <!-- STEP 4: unlocked -->
@@ -182,6 +202,7 @@
       <button id="btn-again" class="ghost">Make another baby</button>
     </div>
     <div class="share-row">
+      <button id="btn-share" class="share-btn">💬 Send it to the family chat</button>
       <p class="tiny">Made with BabyPeek · just for fun — not a genetic prediction.</p>
     </div>
   </section>
@@ -320,8 +341,20 @@
         <li>💳 Secure Stripe checkout</li>
       </ul>
       <a class="cta" href="#app">Make my baby 👶</a>
-      <p class="tiny">Less than a coffee. Way cuter.</p>
+      <p class="tiny">Less than a coffee. Way cuter. Other AI baby sites charge $8.99–$29 for the same portrait.</p>
     </div>
+  </section>
+
+  <!-- ============ EMAIL CAPTURE ============ -->
+  <section class="section" id="notify">
+    <div class="pill">💌 Still deciding?</div>
+    <h2>Get a little nudge <em>later</em></h2>
+    <p class="lede center">Not ready to peek today? Leave your email — we'll send one sweet reminder and first dibs when new features launch. No spam, ever. One-click unsubscribe.</p>
+    <div class="email-row" style="max-width:420px;margin:18px auto 0">
+      <input type="email" id="notify-email" placeholder="you@example.com" autocomplete="email" inputmode="email" aria-label="Email address">
+      <button id="btn-notify" class="cta">Remind me 💛</button>
+    </div>
+    <p id="notify-msg" class="tiny" style="text-align:center;margin-top:10px" hidden></p>
   </section>
 
   <!-- ============ FAQ ============ -->
@@ -368,5 +401,44 @@
 </footer>
 
 <script src="/app.js"></script>
+<!-- MehyarSoft cookie consent v1 — vanilla JS, no dependencies (~2.2KB).
+     Set MS_COOKIE_PRIVACY_URL per site before including. Stores choice in
+     localStorage as ms_cookie_consent=accepted|declined. Best-effort
+     dataLayer push for future GTM Consent Mode gating; does not gate
+     hardcoded GTM (follow-up). Never throws: wrapped in try/catch. -->
+<script>
+(function(){try{
+var KEY='ms_cookie_consent',PRIV=('https://mehyar.us/privacy-policy/'||'/privacy-policy/');
+var v=null;try{v=localStorage.getItem(KEY);}catch(e){}
+if(v==='accepted'||v==='declined')return;
+function set(c){try{localStorage.setItem(KEY,c);}catch(e){}
+ try{window.dataLayer=window.dataLayer||[];window.dataLayer.push({event:'cookie_consent',consent:c});}catch(e){}}
+var b=document.createElement('div');
+b.id='ms-cookie-bar';
+b.setAttribute('role','dialog');b.setAttribute('aria-label','Cookie consent');
+b.innerHTML='<style>'
++'#ms-cookie-bar{position:fixed;left:12px;right:12px;bottom:12px;z-index:2147483000;'
++'background:#111827;color:#f9fafb;border:1px solid #374151;border-radius:12px;'
++'padding:12px 14px;font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;'
++'box-shadow:0 8px 30px rgba(0,0,0,.35);display:flex;gap:10px;align-items:center;flex-wrap:wrap}'
++'#ms-cookie-bar p{margin:0;flex:1 1 220px;font-size:13px}'
++'#ms-cookie-bar a{color:#93c5fd;text-decoration:underline}'
++'#ms-cookie-bar button{border:0;border-radius:8px;padding:8px 16px;font-size:13px;font-weight:600;cursor:pointer}'
++'#ms-ok{background:#22c55e;color:#052e12}#ms-no{background:#374151;color:#f9fafb}'
++'@media(min-width:640px){#ms-cookie-bar{left:auto;right:20px;bottom:20px;max-width:420px}}'
++'</style>'
++'<p>We use cookies to improve your experience and analyze traffic. '
++'<a href="'+PRIV+'" rel="noopener">Privacy policy</a></p>'
++'<button id="ms-ok" type="button">Accept</button>'
++'<button id="ms-no" type="button">Decline</button>';
+document.body.appendChild(b);
+function done(c){set(c);b.remove();}
+b.querySelector('#ms-ok').addEventListener('click',function(){done('accepted');});
+b.querySelector('#ms-no').addEventListener('click',function(){done('declined');});
+window.msCookieConsent={choice:function(){try{return localStorage.getItem(KEY);}catch(e){return null;}},
+reset:function(){try{localStorage.removeItem(KEY);}catch(e){}location.reload();}};
+}catch(e){}})();
+</script>
+
 </body>
 </html>
