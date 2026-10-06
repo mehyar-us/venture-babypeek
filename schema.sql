@@ -12,6 +12,7 @@ CREATE TABLE IF NOT EXISTS generations (
   access_token TEXT,
   tier TEXT NOT NULL DEFAULT 'paid',           -- 'free' = free-first render, 'paid' = legacy teaser funnel
   est_cost_usd REAL,                           -- published-rate inference cost estimate per render
+  src TEXT,                                     -- render-source attribution (utm/src param threading, E18 measurement)
   extras_status TEXT NOT NULL DEFAULT 'none',  -- deluxe pack: none|processing|ready|error
   extras_json TEXT                              -- [{kind, key}] for v1/v2/age5/age15
 );

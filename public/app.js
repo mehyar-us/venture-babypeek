@@ -90,6 +90,21 @@
       const fd = new FormData();
       fd.append("photo1", photo1, "parent1.jpg");
       fd.append("photo2", photo2, "parent2.jpg");
+      // Render-source attribution (E18 measurement): first-touch utm/src
+      // from MSRC capture, else the live page URL. Sanitized, non-identifying.
+      try {
+        let src = "";
+        if (window.MSRC && typeof window.MSRC.get === "function") {
+          const m = window.MSRC.get() || {};
+          src = m.utm_source || m.src || "";
+        }
+        if (!src) {
+          const p = new URLSearchParams(window.location.search);
+          src = p.get("src") || p.get("utm_source") || "";
+        }
+        src = String(src).replace(/[^a-zA-Z0-9_.\-]/g, "").slice(0, 64);
+        if (src) fd.append("src", src);
+      } catch (e) { /* best-effort only */ }
       const r = await fetch("/api/generate", { method: "POST", body: fd });
       const d = await r.json();
       if (!d.ok) {

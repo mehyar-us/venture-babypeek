@@ -579,15 +579,23 @@ async function handleApi(request, env, ctx) {
 
     const id = newId();
     const now = Math.floor(Date.now() / 1000);
+    // Render-source attribution (E18 measurement): first-touch utm/src threaded
+    // from the page at upload time. Sanitized, non-identifying, nullable.
+    let src = null;
+    try {
+      const raw = String(form.get("src") || "");
+      const clean = raw.replace(/[^a-zA-Z0-9_.\-]/g, "").slice(0, 64);
+      if (clean) src = clean;
+    } catch (e) { /* ignore — src is best-effort */ }
     const [b1, b2] = await Promise.all([
       f1.arrayBuffer().then((b) => new Uint8Array(b)),
       f2.arrayBuffer().then((b) => new Uint8Array(b)),
     ]);
     await db
       .prepare(
-        "INSERT INTO generations (id, created_at, ip, status, tier) VALUES (?, ?, ?, 'processing', ?)"
+        "INSERT INTO generations (id, created_at, ip, status, tier, src) VALUES (?, ?, ?, 'processing', ?, ?)"
       )
-      .bind(id, now, ip, FREE_FIRST ? "free" : "paid")
+      .bind(id, now, ip, FREE_FIRST ? "free" : "paid", src)
       .run();
     if (grant.key) await freeGrantMark(env, grant.key, id);
     if (FREE_FIRST) ctx.waitUntil(runFreePipeline(env, id, bytesToB64(b1), bytesToB64(b2), grant.key));
