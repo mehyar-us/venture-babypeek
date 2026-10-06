@@ -36,7 +36,14 @@ binding = "CONTACTS_DB"
 database_name = "mehyar-jobs"
 database_id = "de494f9a-9da2-4123-8bb7-269473cca8a6"
 
-# NOTE: no [vars] secrets here and none needed — Workers AI / D1 / R2 bind
+# Abuse-guard rate-limit store for the free-first ladder (E18, 2026-10-06).
+# KV free tier (100k reads / 1k writes per day) is more than enough: at most
+# 1 write per free render, 1 read per generation attempt.
+[[kv_namespaces]]
+binding = "FREE_KV"
+id = "bf60f2eac7f949988daf59e42f55c166"
+
+# NOTE: no [vars] secrets here and none needed — Workers AI / D1 / R2 / KV bind
 # directly. Deploy ONLY via the GitHub Actions workflow
 # (.github/workflows/deploy.yml), never `wrangler pages deploy` from a repo
 # directory (that wipes dashboard env vars on Pages projects).

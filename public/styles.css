@@ -260,3 +260,22 @@ footer .logo { margin-bottom: 8px; }
   h1 { font-size: 3rem; }
   .ba-grid { gap: 26px; }
 }
+
+/* ---------- free-first ladder (E18, 2026-10-06) ---------- */
+/* Keyboard-accessible file inputs: visually hidden but still focusable. */
+.vh-input {
+  position: absolute; width: 1px; height: 1px; overflow: hidden;
+  clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap;
+}
+.uploader:focus-within { outline: 3px solid var(--pink); outline-offset: 2px; }
+.unlock-card {
+  margin: 22px auto 0; max-width: 560px; padding: 22px 18px;
+  border: 2px solid var(--pink); border-radius: 18px; background: #fff7fb;
+  display: grid; gap: 10px; text-align: center;
+}
+.deluxe-list { list-style: none; padding: 0; margin: 4px 0; display: grid; gap: 6px; font-weight: 600; }
+.deluxe-list li { font-size: .95rem; }
+.extras-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px; }
+.extras-grid figure { margin: 0; }
+.extras-grid img { width: 100%; height: auto; aspect-ratio: 1 / 1; object-fit: cover; border-radius: 14px; }
+.extras-grid figcaption { font-size: .78rem; color: var(--muted); text-align: center; margin-top: 4px; font-weight: 600; }

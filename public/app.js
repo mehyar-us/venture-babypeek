@@ -1,8 +1,8 @@
-// BabyPeek frontend — upload → generate → teaser → $5 unlock → reveal.
+// BabyPeek frontend — upload → FREE portrait → deluxe pitch → $5 unlock → deluxe pack.
 (function () {
   "use strict";
   const $ = (id) => document.getElementById(id);
-  const views = ["view-upload", "view-loading", "view-teaser", "view-unlocked"];
+  const views = ["view-upload", "view-loading", "view-free", "view-unlocked"];
   const LS_GID = "babypeek_gid";
   const LS_EMAIL = "babypeek_email";
   const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -92,7 +92,15 @@
       fd.append("photo2", photo2, "parent2.jpg");
       const r = await fetch("/api/generate", { method: "POST", body: fd });
       const d = await r.json();
-      if (!d.ok) throw new Error(d.error || "generate_failed");
+      if (!d.ok) {
+        if (d.error === "free_limit") {
+          clearInterval(msgTimer);
+          show("view-upload");
+          err("upload-error", "That's your free portrait for today 👶 — come back tomorrow, or unlock the Deluxe Pack below.");
+          return;
+        }
+        throw new Error(d.error || "generate_failed");
+      }
       gid = d.id;
       localStorage.setItem(LS_GID, gid);
       pollTimer = setInterval(async () => {
@@ -100,10 +108,20 @@
           const s = await (await fetch("/api/status/" + gid)).json();
           if (s.status === "ready") {
             clearInterval(pollTimer); clearInterval(msgTimer);
-            $("teaser-img").src = "/api/teaser/" + gid + "?t=" + Date.now();
-            const em = localStorage.getItem(LS_EMAIL);
-            if (em) $("email").value = em;
-            show("view-teaser");
+            // Free-first: the full portrait IS the render. Preload before
+            // swapping views; a 404 means a legacy teaser-funnel row.
+            const probe = new Image();
+            probe.onload = () => {
+              $("free-img").src = "/api/free/" + gid + "?t=" + Date.now();
+              const em = localStorage.getItem(LS_EMAIL);
+              if (em) $("email").value = em;
+              show("view-free");
+            };
+            probe.onerror = () => {
+              show("view-upload");
+              err("upload-error", "That preview expired — please generate again.");
+            };
+            probe.src = "/api/free/" + gid + "?t=" + Date.now();
           } else if (s.status === "error") {
             clearInterval(pollTimer); clearInterval(msgTimer);
             show("view-upload");
@@ -118,7 +136,7 @@
     }
   });
 
-  // ---- unlock: email → centralized Stripe checkout ----
+  // ---- unlock: email → centralized Stripe checkout ($5 Deluxe Pack) ----
   $("btn-unlock").addEventListener("click", async () => {
     const email = $("email").value.trim().toLowerCase();
     if (!EMAIL_RE.test(email)) { err("teaser-error", "Please enter a valid email address."); return; }
@@ -151,11 +169,45 @@
       err("teaser-error", "Checkout hiccup — please try again in a moment.");
     } finally {
       btn.disabled = false;
-      btn.textContent = "Unlock full portrait — $5";
+      btn.textContent = "Unlock deluxe — $5";
     }
   });
 
-  // ---- return from Stripe: ?token= → redeem → reveal ----
+  // ---- return from Stripe: ?token= → redeem → deluxe pack ----
+  let extrasTimer = null;
+  function renderExtras(items) {
+    const grid = $("extras-grid");
+    grid.innerHTML = "";
+    items.forEach((it) => {
+      const fig = document.createElement("figure");
+      const img = document.createElement("img");
+      img.src = it.url;
+      img.alt = it.label;
+      img.loading = "lazy";
+      const cap = document.createElement("figcaption");
+      cap.textContent = it.label;
+      fig.appendChild(img); fig.appendChild(cap);
+      grid.appendChild(fig);
+    });
+  }
+  function pollExtras(id, token) {
+    const statusEl = $("extras-status");
+    const tick = async () => {
+      try {
+        const s = await (await fetch("/api/extras/" + id + "?token=" + encodeURIComponent(token))).json();
+        if (s.ok && s.status === "ready" && s.items && s.items.length) {
+          clearInterval(extrasTimer); extrasTimer = null;
+          statusEl.textContent = "Your bonus portraits are here ✨";
+          renderExtras(s.items);
+        } else if (s.ok && s.status === "error") {
+          clearInterval(extrasTimer); extrasTimer = null;
+          statusEl.textContent = "The bonus portraits stumbled — your portrait + HD download above are yours. Try the deluxe pack again in a bit.";
+        }
+      } catch { /* keep polling */ }
+    };
+    tick();
+    extrasTimer = setInterval(tick, 5000);
+  }
   async function redeemFromUrl() {
     const q = new URLSearchParams(window.location.search);
     const token = q.get("token");
@@ -163,15 +215,18 @@
     const id = gid || localStorage.getItem(LS_GID);
     if (!id) return false;
     try {
-      await fetch("/api/redeem", {
+      const rr = await fetch("/api/redeem", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ id, token }),
       });
+      const rd = await rr.json().catch(() => ({}));
+      if (!rd.ok) return false;
       const src = "/api/full/" + id + "?token=" + encodeURIComponent(token);
       $("full-img").src = src;
       $("btn-download").href = src + "&download=1";
       show("view-unlocked");
+      pollExtras(id, token);
       // Purchase attribution for the Meta test (E16): redeem success = paid.
       // Pixel-side signal closes the D1-only attribution gap for the 10/7 kill clock.
       if (!purchaseFired.has(id)) {
@@ -192,16 +247,16 @@
     window.location.href = "/";
   });
 
-  // ---- share row (unlocked view): every baby photo is the ad.
+  // ---- share row (free + deluxe views): every baby photo is the ad.
   //    Shares ONLY the clean homepage funnel URL (never the tokenized /api/full
   //    image — recipient replays the free flow themselves). Native sheet on
   //    mobile (→ family group chat), clipboard fallback on desktop.
-  const shareBtn = $("btn-share");
-  let shareFired = false;
-  if (shareBtn) {
+  function wireShare(btnId, firedFlag) {
+    const shareBtn = $(btnId);
+    if (!shareBtn) return;
     shareBtn.addEventListener("click", async () => {
       const shareUrl = "https://baby.mehyar.us/?utm_source=babypeek_share&utm_medium=webshare";
-      const shareText = "I just tried BabyPeek — free sneak peek of what your baby could look like 👀";
+      const shareText = "I just tried BabyPeek — my baby's first AI portrait was FREE 👶";
       let method = "none";
       try {
         if (navigator.share) {
@@ -217,8 +272,8 @@
           try { await navigator.clipboard.writeText(shareText + " " + shareUrl); method = "clipboard"; } catch {}
         } else return;
       }
-      if (!shareFired && method !== "none") {
-        shareFired = true;
+      if (!firedFlag.done && method !== "none") {
+        firedFlag.done = true;
         try { window.fbq && fbq("trackCustom", "BabyPeekShare", { method }); } catch {}
       }
       const prev = shareBtn.textContent;
@@ -227,6 +282,8 @@
       setTimeout(() => { shareBtn.textContent = prev; shareBtn.disabled = false; }, 4000);
     });
   }
+  wireShare("btn-share", { done: false });
+  wireShare("btn-share-free", { done: false });
 
   // ---- standalone homepage capture → POST /api/subscribe ----
   const notifyBtn = $("btn-notify");

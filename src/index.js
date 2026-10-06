@@ -15,6 +15,117 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const MAX_PHOTO_BYTES = 6 * 1024 * 1024;
 const RATE_LIMIT_PER_HOUR = 8;
 
+// ── Free-first-render ladder (2026-10-06, E18) ─────────────────────────
+// FREE_FIRST=true: a visitor's first render per IP per day is FREE (one AI
+// baby portrait, no payment, no account). The $5 unlock becomes the Deluxe
+// Pack: 2 bonus variations + age progression (5 & 15) + full-res HD download.
+// Set FREE_FIRST=false and redeploy to revert to the $5-before-taste funnel.
+const FREE_FIRST = true;
+const FREE_PER_IP_PER_24H = 1;
+const FREE_ALARM_PER_DAY = 200; // soft alarm threshold (see recordFreeMetrics)
+
+// Inference cost model (published Cloudflare rates, 2026-10-06 — logged as
+// estimates, not metered usage):
+//   flux-1-schnell: 4.80 neurons per 512x512 tile + 9.60 neurons per step
+//     (default 4 steps). Output ≈1024x1024 (4 tiles) → 57.6 neurons/image.
+//   neuron price: $0.011 / 1,000 neurons.
+//   llama-3.2-11b-vision-instruct: $0.049 / 1M input tokens, $0.676 / 1M out;
+//     ~2.5k in-tokens + ~60 out-tokens per photo call → ≈$0.00016/call.
+const FLUX_NEURONS_PER_IMAGE = 57.6;
+const NEURON_USD = 0.011 / 1000;
+const VISION_CALL_USD = 0.00016;
+const fluxImageCostUsd = () => FLUX_NEURONS_PER_IMAGE * NEURON_USD;
+
+async function sha256Hex(s) {
+  const d = await crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(s)
+  );
+  return [...new Uint8Array(d)]
+    .map((x) => x.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+// Abuse guard: 1 free render per IP per 24h. KV is primary (auto-expiring
+// keys, no buyer data — keys are SHA-256 hashes of the IP, values are the
+// generation id). D1 is the fallback if the KV binding is missing.
+// On grant, the KV key is marked immediately; runFreePipeline releases it
+// again if the pipeline ERRORS, so a failed render doesn't burn the grant.
+async function freeGrantCheck(env, db, ip) {
+  const day = new Date().toISOString().slice(0, 10); // UTC day
+  if (env.FREE_KV) {
+    try {
+      const key = "free:" + day + ":" + (await sha256Hex(ip));
+      if (await env.FREE_KV.get(key))
+        return { ok: false, reason: "free_limit" };
+      return { ok: true, key };
+    } catch {
+      /* fall through to D1 */
+    }
+  }
+  const dayAgo = Math.floor(Date.now() / 1000) - 86400;
+  const cnt = await db
+    .prepare(
+      "SELECT COUNT(*) AS n FROM generations WHERE ip=? AND created_at>? AND tier='free'"
+    )
+    .bind(ip, dayAgo)
+    .first();
+  if (cnt && cnt.n >= FREE_PER_IP_PER_24H)
+    return { ok: false, reason: "free_limit" };
+  return { ok: true, key: null };
+}
+
+async function freeGrantMark(env, key, id) {
+  if (env.FREE_KV && key) {
+    try {
+      await env.FREE_KV.put(key, id, { expirationTtl: 172800 });
+    } catch {
+      /* D1 fallback already guards */
+    }
+  }
+}
+
+async function freeGrantRelease(env, key) {
+  if (env.FREE_KV && key) {
+    try {
+      await env.FREE_KV.delete(key);
+    } catch {
+      /* best effort */
+    }
+  }
+}
+
+// Soft alarm: counts free renders/day in D1 and flags the viral-day case.
+// No external calls (no email sends allowed) — the morning review reads the
+// free_metrics table. console.error keeps it visible in worker logs too.
+async function recordFreeMetrics(db, costUsd) {
+  try {
+    const day = new Date().toISOString().slice(0, 10);
+    await db
+      .prepare(
+        "INSERT INTO free_metrics (day, renders, est_cost_usd, alerted) VALUES (?, 1, ?, 0) " +
+          "ON CONFLICT(day) DO UPDATE SET renders=renders+1, est_cost_usd=est_cost_usd+excluded.est_cost_usd"
+      )
+      .bind(day, costUsd)
+      .run();
+    const row = await db
+      .prepare("SELECT renders, alerted FROM free_metrics WHERE day=?")
+      .bind(day)
+      .first();
+    if (row && row.renders > FREE_ALARM_PER_DAY && !row.alerted) {
+      await db
+        .prepare("UPDATE free_metrics SET alerted=1 WHERE day=?")
+        .bind(day)
+        .run();
+      console.error(
+        `FREE ALARM: baby.mehyar.us free renders ${row.renders} > ${FREE_ALARM_PER_DAY} on ${day}`
+      );
+    }
+  } catch (e) {
+    console.error("free_metrics write failed:", e && e.message);
+  }
+}
+
 function json(data, status = 200) {
   return new Response(JSON.stringify(data), {
     status,
@@ -266,19 +377,118 @@ async function describeParents(env, b64a, b64b) {
   return `${a} | ${b}`;
 }
 
-async function genImage(env, prompt) {
-  const out = await env.AI.run(IMAGE_MODEL, { prompt });
+function fullPortraitPrompt(features) {
+  return (
+    `Adorable newborn baby portrait blending these family traits: ${features}. ` +
+    `Soft studio lighting, sweet peaceful expression, photorealistic, ultra detailed skin texture, ` +
+    `centered head-and-shoulders composition, plain soft background`
+  );
+}
+
+async function genImage(env, prompt, seed) {
+  const params = { prompt };
+  if (seed != null) params.seed = seed;
+  const out = await env.AI.run(IMAGE_MODEL, params);
   return aiImageBytes(out);
+}
+
+// Free-first pipeline: ONE full portrait (no teaser — the portrait itself is
+// the free render). Logs estimated inference cost per render.
+async function runFreePipeline(env, id, b64a, b64b, grantKey) {
+  const db = env.BABYPEEK_DB;
+  try {
+    const features = await describeParents(env, b64a, b64b);
+    const fullBytes = await genImage(env, fullPortraitPrompt(features));
+    const fullKey = `g/${id}/full.jpg`;
+    await env.BABYPEEK_R2.put(fullKey, fullBytes, {
+      httpMetadata: { contentType: "image/jpeg" },
+    });
+    const cost = 2 * VISION_CALL_USD + fluxImageCostUsd();
+    await db
+      .prepare(
+        "UPDATE generations SET status='ready', features=?, full_key=?, teaser_key=NULL, tier='free', est_cost_usd=? WHERE id=?"
+      )
+      .bind(features, fullKey, cost, id)
+      .run();
+    await recordFreeMetrics(db, cost);
+  } catch (e) {
+    const msg = String((e && e.message) || e).slice(0, 300);
+    await db
+      .prepare("UPDATE generations SET status='error', error=? WHERE id=?")
+      .bind(msg, id)
+      .run();
+    // Failed render must not burn the user's free grant.
+    await freeGrantRelease(env, grantKey);
+  }
+}
+
+// Deluxe-pack pipeline (post-$5 unlock): 2 bonus variations + age progression
+// at 5 and 15. Runs async after /api/redeem verifies payment.
+async function runExtras(env, id) {
+  const db = env.BABYPEEK_DB;
+  try {
+    const row = await db
+      .prepare("SELECT features FROM generations WHERE id=?")
+      .bind(id)
+      .first();
+    const features =
+      (row && row.features) || "a cute newborn baby's features";
+    const seed = () => Math.floor(Math.random() * 1000000000);
+    const jobs = [
+      [
+        "v1",
+        `Adorable newborn baby portrait blending these family traits: ${features}. ` +
+          `Playful different pose, soft window light, photorealistic, ultra detailed skin, ` +
+          `centered head-and-shoulders, plain soft background`,
+      ],
+      [
+        "v2",
+        `Sweet sleeping newborn baby portrait with these family traits: ${features}. ` +
+          `Cozy knitted blanket, gentle morning light, photorealistic close portrait`,
+      ],
+      [
+        "age5",
+        `Cheerful 5-year-old child portrait — the same child grown up, family traits: ${features}. ` +
+          `Bright natural light, photorealistic, head-and-shoulders`,
+      ],
+      [
+        "age15",
+        `Happy 15-year-old teenager portrait — the same child as a teenager, family traits: ${features}. ` +
+          `Natural outdoor light, photorealistic, head-and-shoulders`,
+      ],
+    ];
+    const out = [];
+    for (const [kind, prompt] of jobs) {
+      const bytes = await genImage(env, prompt, seed());
+      const key = `g/${id}/${kind}.jpg`;
+      await env.BABYPEEK_R2.put(key, bytes, {
+        httpMetadata: { contentType: "image/jpeg" },
+      });
+      out.push({ kind, key });
+    }
+    const cost = jobs.length * fluxImageCostUsd();
+    await db
+      .prepare(
+        "UPDATE generations SET extras_status='ready', extras_json=?, est_cost_usd=COALESCE(est_cost_usd,0)+? WHERE id=?"
+      )
+      .bind(JSON.stringify(out), cost, id)
+      .run();
+  } catch (e) {
+    const msg = String((e && e.message) || e).slice(0, 300);
+    await db
+      .prepare(
+        "UPDATE generations SET extras_status='error', extras_json=? WHERE id=?"
+      )
+      .bind(JSON.stringify({ error: msg }), id)
+      .run();
+  }
 }
 
 async function runPipeline(env, id, b64a, b64b) {
   const db = env.BABYPEEK_DB;
   try {
     const features = await describeParents(env, b64a, b64b);
-    const fullPrompt =
-      `Adorable newborn baby portrait blending these family traits: ${features}. ` +
-      `Soft studio lighting, sweet peaceful expression, photorealistic, ultra detailed skin texture, ` +
-      `centered head-and-shoulders composition, plain soft background`;
+    const fullPrompt = fullPortraitPrompt(features);
     // Teaser strategy (2026-09-14): FLUX actively sharpens faces no matter how
     // hard the prompt begs for blur — a "blurred face" teaser always leaked
     // the face. So the teaser never contains a face at all: an extreme
@@ -303,9 +513,9 @@ async function runPipeline(env, id, b64a, b64b) {
     });
     await db
       .prepare(
-        "UPDATE generations SET status='ready', features=?, full_key=?, teaser_key=? WHERE id=?"
+        "UPDATE generations SET status='ready', features=?, full_key=?, teaser_key=?, est_cost_usd=? WHERE id=?"
       )
-      .bind(features, fullKey, teaserKey, id)
+      .bind(features, fullKey, teaserKey, 2 * VISION_CALL_USD + 2 * fluxImageCostUsd(), id)
       .run();
   } catch (e) {
     const msg = String((e && e.message) || e).slice(0, 300);
@@ -351,6 +561,22 @@ async function handleApi(request, env, ctx) {
     if (cnt && cnt.n >= RATE_LIMIT_PER_HOUR)
       return json({ ok: false, error: "rate_limited" }, 429);
 
+    // Free-first ladder: 1 free render per IP per 24h (abuse guard).
+    let grant = { ok: true, key: null };
+    if (FREE_FIRST) {
+      grant = await freeGrantCheck(env, db, ip);
+      if (!grant.ok)
+        return json(
+          {
+            ok: false,
+            error: "free_limit",
+            message:
+              "That's your free portrait for today — come back tomorrow, or unlock the Deluxe Pack below.",
+          },
+          429
+        );
+    }
+
     const id = newId();
     const now = Math.floor(Date.now() / 1000);
     const [b1, b2] = await Promise.all([
@@ -358,15 +584,40 @@ async function handleApi(request, env, ctx) {
       f2.arrayBuffer().then((b) => new Uint8Array(b)),
     ]);
     await db
-      .prepare("INSERT INTO generations (id, created_at, ip, status) VALUES (?, ?, ?, 'processing')")
-      .bind(id, now, ip)
+      .prepare(
+        "INSERT INTO generations (id, created_at, ip, status, tier) VALUES (?, ?, ?, 'processing', ?)"
+      )
+      .bind(id, now, ip, FREE_FIRST ? "free" : "paid")
       .run();
-    ctx.waitUntil(runPipeline(env, id, bytesToB64(b1), bytesToB64(b2)));
-    return json({ ok: true, id });
+    if (grant.key) await freeGrantMark(env, grant.key, id);
+    if (FREE_FIRST) ctx.waitUntil(runFreePipeline(env, id, bytesToB64(b1), bytesToB64(b2), grant.key));
+    else ctx.waitUntil(runPipeline(env, id, bytesToB64(b1), bytesToB64(b2)));
+    return json({ ok: true, id, free: FREE_FIRST });
+  }
+
+  // GET /api/free/<id> — the free first render (full portrait, no token).
+  // The id is a 32-hex secret — unguessable, same posture as /api/teaser.
+  // Only serves tier='free' generations; paid portraits stay token-gated.
+  let m = path.match(/^\/api\/free\/([0-9a-f]{32})$/);
+  if (m && request.method === "GET") {
+    const row = await db
+      .prepare("SELECT full_key, status, tier FROM generations WHERE id=?")
+      .bind(m[1])
+      .first();
+    if (!row || row.status !== "ready" || row.tier !== "free" || !row.full_key)
+      return json({ ok: false, error: "not_ready" }, 404);
+    const obj = await env.BABYPEEK_R2.get(row.full_key);
+    if (!obj) return json({ ok: false, error: "missing" }, 404);
+    return new Response(obj.body, {
+      headers: {
+        "content-type": "image/jpeg",
+        "cache-control": "public, max-age=3600",
+      },
+    });
   }
 
   // GET /api/status/<id>
-  let m = path.match(/^\/api\/status\/([0-9a-f]{32})$/);
+  m = path.match(/^\/api\/status\/([0-9a-f]{32})$/);
   if (m && request.method === "GET") {
     const row = await db
       .prepare("SELECT status, error FROM generations WHERE id=?")
@@ -487,7 +738,76 @@ async function handleApi(request, env, ctx) {
     }
     if (gid !== id) return json({ ok: false, error: "token_mismatch" }, 403);
     await db.prepare("UPDATE generations SET access_token=? WHERE id=?").bind(token, id).run();
+    // Paid unlock = Deluxe Pack: auto-generate 2 bonus variations + age
+    // progression (5 & 15) so the buyer gets what the pitch promised.
+    const cur = await db
+      .prepare("SELECT extras_status FROM generations WHERE id=?")
+      .bind(id)
+      .first();
+    if (cur && cur.extras_status === "none") {
+      await db
+        .prepare("UPDATE generations SET extras_status='processing' WHERE id=?")
+        .bind(id)
+        .run();
+      ctx.waitUntil(runExtras(env, id));
+    }
     return json({ ok: true });
+  }
+
+  // GET /api/extras/<id>?token= — Deluxe Pack status + image URLs (token-gated)
+  m = path.match(/^\/api\/extras\/([0-9a-f]{32})$/);
+  if (m && request.method === "GET") {
+    const token = url.searchParams.get("token") || "";
+    const row = await db
+      .prepare(
+        "SELECT access_token, extras_status, extras_json FROM generations WHERE id=?"
+      )
+      .bind(m[1])
+      .first();
+    if (!row || !row.access_token || row.access_token !== token)
+      return json({ ok: false, error: "locked" }, 403);
+    let items = [];
+    try {
+      items = JSON.parse(row.extras_json || "[]");
+    } catch {
+      /* keep empty */
+    }
+    return json({
+      ok: true,
+      status: row.extras_status || "none",
+      items: (Array.isArray(items) ? items : []).map((it) => ({
+        kind: it.kind,
+        label:
+          it.kind === "v1"
+            ? "Variation 1"
+            : it.kind === "v2"
+              ? "Variation 2"
+              : it.kind === "age5"
+                ? "Your baby at 5"
+                : "Your baby at 15",
+        url: `/api/extras-img/${m[1]}/${it.kind}?token=${encodeURIComponent(token)}`,
+      })),
+    });
+  }
+
+  // GET /api/extras-img/<id>/<kind>?token= — one Deluxe Pack image (token-gated)
+  m = path.match(/^\/api\/extras-img\/([0-9a-f]{32})\/(v1|v2|age5|age15)$/);
+  if (m && request.method === "GET") {
+    const token = url.searchParams.get("token") || "";
+    const row = await db
+      .prepare("SELECT access_token FROM generations WHERE id=?")
+      .bind(m[1])
+      .first();
+    if (!row || !row.access_token || row.access_token !== token)
+      return json({ ok: false, error: "locked" }, 403);
+    const obj = await env.BABYPEEK_R2.get(`g/${m[1]}/${m[2]}.jpg`);
+    if (!obj) return json({ ok: false, error: "missing" }, 404);
+    return new Response(obj.body, {
+      headers: {
+        "content-type": "image/jpeg",
+        "cache-control": "private, max-age=3600",
+      },
+    });
   }
 
   // GET /api/full/<id>?token= — the paid portrait, token-gated
@@ -582,6 +902,16 @@ export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
     if (url.pathname.startsWith("/api/")) return handleApi(request, env, ctx);
-    return env.ASSETS.fetch(request);
+    try {
+      return await env.ASSETS.fetch(request);
+    } catch (e) {
+      // 2026-10-06: ASSETS.fetch throws (Cloudflare 1101) on any missing asset
+      // path instead of returning 404. Fail closed with a clean 404 so
+      // mistyped URLs, crawlers, and ad display paths never 500.
+      return new Response("Not found", {
+        status: 404,
+        headers: { "Content-Type": "text/plain; charset=utf-8" },
+      });
+    }
   },
 };
