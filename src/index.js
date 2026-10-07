@@ -774,15 +774,33 @@ async function handleApi(request, env, ctx) {
   m = path.match(/^\/api\/status\/([0-9a-f]{32})$/);
   if (m && request.method === "GET") {
     const row = await db
-      .prepare("SELECT status, error, extras_status FROM generations WHERE id=?")
+      .prepare("SELECT status, error, extras_status, created_at FROM generations WHERE id=?")
       .bind(m[1])
       .first();
     if (!row) return json({ ok: false, error: "unknown_id" }, 404);
+    let extrasStatus = row.extras_status || "none";
+    // Stale-claim self-heal (2026-10-07): runExtras has no retries/timeouts,
+    // so a hung flux call leaves extras_status='processing' forever and the
+    // free-result page's teaser poll spins indefinitely on the close mechanic.
+    // The read path heals it: after 15 min (6 sequential images finish well
+    // under this), 'processing' is reaped to 'error' — the page hides the
+    // teaser gracefully (already-designed state) and the redeem claim's
+    // IN('none','error') takes over, regenerating on purchase. Idempotent.
+    if (extrasStatus === "processing" && row.created_at) {
+      const nowSec = Math.floor(Date.now() / 1000);
+      if (nowSec - Number(row.created_at) > 900) {
+        await db
+          .prepare("UPDATE generations SET extras_status='error' WHERE id=? AND extras_status='processing'")
+          .bind(m[1])
+          .run();
+        extrasStatus = "error";
+      }
+    }
     return json({
       ok: true,
       status: row.status,
       error: row.error || null,
-      extras_status: row.extras_status || "none",
+      extras_status: extrasStatus,
     });
   }
 
