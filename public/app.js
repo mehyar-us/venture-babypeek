@@ -98,16 +98,25 @@
       fd.append("photo2", photo2, "parent2.jpg");
       // Render-source attribution (E18 measurement): first-touch utm/src
       // from MSRC capture, else the live page URL. Sanitized, non-identifying.
+      // 2026-10-06 (idea 38/50): thread utm_medium + click IDs so paid
+      // search renders read "google.paid_search" and organic reads "google"
+      // — the E17 clock needs the paid-vs-organic render split. Last-touch
+      // (current page URL) wins for the render event; MSRC is the fallback.
       try {
         let src = "";
+        const p = new URLSearchParams(window.location.search);
+        const qSource = p.get("src") || p.get("utm_source") || "";
+        let qMedium = p.get("utm_medium") || "";
+        if (!qMedium && (p.get("gclid") || p.get("msclkid"))) qMedium = "paid_search";
+        let m = {};
         if (window.MSRC && typeof window.MSRC.get === "function") {
-          const m = window.MSRC.get() || {};
-          src = m.utm_source || m.src || "";
+          m = window.MSRC.get() || {};
         }
-        if (!src) {
-          const p = new URLSearchParams(window.location.search);
-          src = p.get("src") || p.get("utm_source") || "";
-        }
+        let medium = qMedium || m.utm_medium || "";
+        if (!medium && (m.gclid || m.msclkid)) medium = "paid_search";
+        src = (qSource || m.utm_source || m.src || "");
+        if (src && medium) src += "." + medium;
+        else if (!src) src = medium;
         src = String(src).replace(/[^a-zA-Z0-9_.\-]/g, "").slice(0, 64);
         if (src) fd.append("src", src);
       } catch (e) { /* best-effort only */ }
