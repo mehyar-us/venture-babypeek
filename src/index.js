@@ -17,9 +17,9 @@ const RATE_LIMIT_PER_HOUR = 8;
 
 // ── Free-first-render ladder (2026-10-06, E18) ─────────────────────────
 // FREE_FIRST=true: a visitor's first render per IP per day is FREE (one AI
-// baby portrait, no payment, no account). The $5 unlock becomes the Deluxe
+// baby portrait, no payment, no account). The $17 unlock becomes the Deluxe
 // Pack: 2 bonus variations + age progression (5 & 15) + full-res HD download.
-// Set FREE_FIRST=false and redeploy to revert to the $5-before-taste funnel.
+// Set FREE_FIRST=false and redeploy to revert to the $17-before-taste funnel.
 const FREE_FIRST = true;
 const FREE_PER_IP_PER_24H = 1;
 const FREE_ALARM_PER_DAY = 200; // soft alarm threshold (see recordFreeMetrics)
@@ -149,6 +149,28 @@ function json(data, status = 200) {
     status,
     headers: { "content-type": "application/json", "cache-control": "no-store" },
   });
+}
+
+// ── Funnel ladder columns (2026-10-06: $17 reprice + $9 bump + $27 upsell) ─
+// bump_paid: buyer added the $9 Couple Pack at checkout (v3/v4 unlocked).
+// agepack_*: the $27 Age Progression Pack upsell (ages 1/3/10/20).
+// Defensive: the ALTERs also run here so a missed migration can't 500 the
+// funnel; the canonical schema lives in schema.sql.
+async function ensureFunnelColumns(db) {
+  try {
+    const info = await db.prepare("PRAGMA table_info(generations)").all();
+    const cols = new Set((info.results || []).map((r) => r.name));
+    if (!cols.has("bump_paid"))
+      await db.prepare("ALTER TABLE generations ADD COLUMN bump_paid INTEGER NOT NULL DEFAULT 0").run();
+    if (!cols.has("agepack_token"))
+      await db.prepare("ALTER TABLE generations ADD COLUMN agepack_token TEXT").run();
+    if (!cols.has("agepack_status"))
+      await db.prepare("ALTER TABLE generations ADD COLUMN agepack_status TEXT NOT NULL DEFAULT 'none'").run();
+    if (!cols.has("agepack_json"))
+      await db.prepare("ALTER TABLE generations ADD COLUMN agepack_json TEXT").run();
+  } catch (e) {
+    console.error("ensureFunnelColumns note: " + String((e && e.message) || e).slice(0, 120));
+  }
 }
 
 function newId() {
@@ -467,7 +489,7 @@ async function runFreePipeline(env, id, b64a, b64b, grantKey) {
   }
 }
 
-// Deluxe-pack pipeline (post-$5 unlock): 2 bonus variations + age progression
+// Deluxe-pack pipeline (post-$17 unlock): 2 bonus variations + age progression
 // at 5 and 15. Runs async after /api/redeem verifies payment.
 async function runExtras(env, id) {
   const db = env.BABYPEEK_DB;
@@ -500,6 +522,19 @@ async function runExtras(env, id) {
         `Happy 15-year-old teenager portrait — the same child as a teenager, family traits: ${features}. ` +
           `Natural outdoor light, photorealistic, head-and-shoulders`,
       ],
+      // Couple Pack bump ($9 at checkout): 2 bonus variations, delivered
+      // only when the generation's bump_paid flag is set (gated in
+      // /api/extras). Pre-generated with the rest so the unlock is instant.
+      [
+        "v3",
+        `Adorable newborn baby portrait blending these family traits: ${features}. ` +
+          `Dreamy close-up, tiny knit hat, soft pastel backdrop, photorealistic, ultra detailed skin`,
+      ],
+      [
+        "v4",
+        `Joyful newborn baby portrait with these family traits: ${features}. ` +
+          `Gentle smile, cozy white wrap, bright airy studio light, photorealistic, head-and-shoulders`,
+      ],
     ];
     const out = [];
     for (const [kind, prompt] of jobs) {
@@ -528,6 +563,71 @@ async function runExtras(env, id) {
       .run();
     return 0;
   }
+}
+
+// Age Progression Pack upsell ($27, post-purchase): the rest of the
+// timeline — the same child at ages 1, 3, 10 and 20. Triggered only by a
+// verified upsell purchase (/api/upsell or /api/agepack-fulfill), never
+// pre-generated: this is paid-only content. Atomic claim by the caller;
+// this function just runs and records.
+async function runAgepack(env, id) {
+  const db = env.BABYPEEK_DB;
+  try {
+    const row = await db
+      .prepare("SELECT features FROM generations WHERE id=?")
+      .bind(id)
+      .first();
+    const features =
+      (row && row.features) || "a cute newborn baby's features";
+    const ages = [
+      ["a1", "1-year-old toddler"],
+      ["a3", "3-year-old child"],
+      ["a10", "10-year-old child"],
+      ["a20", "20-year-old young adult"],
+    ];
+    const out = [];
+    for (const [kind, label] of ages) {
+      const bytes = await genImage(
+        env,
+        `${label} portrait — the same child grown up, family traits: ${features}. ` +
+          `Natural light, warm genuine expression, photorealistic, head-and-shoulders`
+      );
+      const key = `g/${id}/${kind}.jpg`;
+      await env.BABYPEEK_R2.put(key, bytes, {
+        httpMetadata: { contentType: "image/jpeg" },
+      });
+      out.push({ kind, key });
+    }
+    const cost = ages.length * fluxImageCostUsd();
+    await db
+      .prepare(
+        "UPDATE generations SET agepack_status='ready', agepack_json=?, est_cost_usd=COALESCE(est_cost_usd,0)+? WHERE id=?"
+      )
+      .bind(JSON.stringify(out), cost, id)
+      .run();
+    return cost;
+  } catch (e) {
+    const msg = String((e && e.message) || e).slice(0, 300);
+    await db
+      .prepare(
+        "UPDATE generations SET agepack_status='error', agepack_json=? WHERE id=?"
+      )
+      .bind(JSON.stringify({ error: msg }), id)
+      .run();
+    return 0;
+  }
+}
+
+// Atomically claim the agepack generation slot (none/error -> processing).
+// Returns true when THIS caller won the claim.
+async function claimAgepack(db, id) {
+  const claim = await db
+    .prepare(
+      "UPDATE generations SET agepack_status='processing' WHERE id=? AND agepack_status IN ('none','error')"
+    )
+    .bind(id)
+    .run();
+  return !!(claim && claim.meta && claim.meta.changes === 1);
 }
 
 async function runPipeline(env, id, b64a, b64b) {
@@ -709,7 +809,7 @@ async function handleApi(request, env, ctx) {
   // the free-result page's Deluxe teaser (E18 close fix, 2026-10-06).
   // No token: same exposure level as /api/free/<id> (unguessable 32-hex id).
   // The page applies a CSS blur + lock overlay; these are the buyer's own
-  // pre-generated Deluxe images, revealed in full after the $5 unlock.
+  // pre-generated Deluxe images, revealed in full after the $17 unlock.
   m = path.match(/^\/api\/teaser-img\/([0-9a-f]{32})\/(age5|age15)$/);
   if (m && request.method === "GET") {
     const row = await db
@@ -767,7 +867,17 @@ async function handleApi(request, env, ctx) {
     // Mirror into the shared central contact store (best-effort).
     ctx.waitUntil(syncCentralContact(env, email, "babypeek-checkout"));
     let r;
-    const payload = { product_id: PRODUCT_ID, email, params: { gid: id } };
+    // Funnel ladder (2026-10-06): save_card keeps the card on file for the
+    // one-tap $27 Age Progression Pack upsell; bump forwards the buyer's
+    // opt-in to the $9 Couple Pack order bump (the checkbox on the page
+    // starts UNCHECKED — no pre-checked add-ons, compliance item 9).
+    // Both are set server-side here; the browser cannot set params directly.
+    const payload = {
+      product_id: PRODUCT_ID,
+      email,
+      params: { gid: id, save_card: true },
+    };
+    if (body.bump === true) payload.params.bump = true;
     if (body.attribution && typeof body.attribution === "object") {
       payload.params.attribution = body.attribution; // <=512B enforced server-side
     }
@@ -786,6 +896,48 @@ async function handleApi(request, env, ctx) {
     if (!r.ok || !data.ok || !data.checkout_url)
       return json({ ok: false, error: "checkout_failed" }, 502);
     return json({ ok: true, checkout_url: data.checkout_url });
+  }
+
+  // POST /api/agepack-redeem — browser return from the fallback hosted
+  // checkout (?agepack_token=). Looks the generation up by the agepack
+  // token, verifies it against the central ledger, and kicks generation
+  // (idempotent claim). Returns the gid so the client can show progress.
+  if (path === "/api/agepack-redeem" && request.method === "POST") {
+    const body = await request.json().catch(() => ({}));
+    const token = String(body.agepack_token || "").slice(0, 128);
+    if (!/^[0-9a-f]{64}$/.test(token))
+      return json({ ok: false, error: "bad_request" }, 400);
+    await ensureFunnelColumns(db);
+    let pay = null;
+    try {
+      pay = await env.BILLING_DB.prepare(
+        "SELECT product_id, status, metadata_json FROM billing_payments WHERE access_token=?"
+      )
+        .bind(token)
+        .first();
+    } catch {
+      return json({ ok: false, error: "verify_unavailable" }, 502);
+    }
+    let gid = "";
+    try {
+      gid = (JSON.parse((pay && pay.metadata_json) || "{}") || {}).gid || "";
+    } catch {
+      /* ignore malformed metadata */
+    }
+    if (!pay || pay.product_id !== "baby-peek-agepack" || pay.status !== "paid" || !/^[0-9a-f]{32}$/.test(gid))
+      return json({ ok: false, error: "not_paid" }, 402);
+    await db
+      .prepare("UPDATE generations SET agepack_token=? WHERE id=? AND (agepack_token IS NULL OR agepack_token != ?)")
+      .bind(token, gid, token)
+      .run();
+    if (await claimAgepack(db, gid)) {
+      ctx.waitUntil(runAgepack(env, gid));
+    }
+    const st = await db
+      .prepare("SELECT agepack_status FROM generations WHERE id=?")
+      .bind(gid)
+      .first();
+    return json({ ok: true, gid, agepack_status: (st && st.agepack_status) || "none" });
   }
 
   // POST /api/redeem — link the Stripe success token to a generation.
@@ -819,7 +971,22 @@ async function handleApi(request, env, ctx) {
       /* ignore malformed metadata */
     }
     if (gid !== id) return json({ ok: false, error: "token_mismatch" }, 403);
-    await db.prepare("UPDATE generations SET access_token=? WHERE id=?").bind(token, id).run();
+    await ensureFunnelColumns(db);
+    // Couple Pack bump: the payment's metadata records the opt-in (set
+    // server-side in /api/checkout from the buyer's unchecked-by-default
+    // checkbox). Flip the flag on — never off.
+    let bumpPaid = false;
+    try {
+      bumpPaid = (JSON.parse(pay.metadata_json || "{}") || {}).bump === true;
+    } catch {
+      /* ignore malformed metadata */
+    }
+    await db
+      .prepare(
+        "UPDATE generations SET access_token=?, bump_paid=CASE WHEN ?=1 THEN 1 ELSE bump_paid END WHERE id=?"
+      )
+      .bind(token, bumpPaid ? 1 : 0, id)
+      .run();
     // Paid unlock = Deluxe Pack: auto-generate 2 bonus variations + age
     // progression (5 & 15) so the buyer gets what the pitch promised.
     // Atomic claim (fixes the old read-then-write race): regenerates when
@@ -838,53 +1005,246 @@ async function handleApi(request, env, ctx) {
     return json({ ok: true });
   }
 
+  // POST /api/upsell — one-click Age Progression Pack upsell ($27).
+  // Body: { id, token } where token is the DELUXE access token. The worker
+  // verifies the base purchase server-to-server in the central ledger, then
+  // calls the central one-click charge endpoint (mehyar.us/api/pay/upsell-
+  // charge), which charges the card saved at checkout — no card re-entry.
+  // On success the agepack token is stored and generation is claimed
+  // atomically (double-clicks and the webhook-fulfillment race are safe).
+  // When the card needs the buyer present (SCA) the endpoint returns
+  // requires_action + a hosted checkout_url fallback instead.
+  if (path === "/api/upsell" && request.method === "POST") {
+    const body = await request.json().catch(() => ({}));
+    const id = String(body.id || "");
+    const token = String(body.token || "").slice(0, 128);
+    if (!/^[0-9a-f]{32}$/.test(id) || !/^[0-9a-f]{64}$/.test(token))
+      return json({ ok: false, error: "bad_request" }, 400);
+    await ensureFunnelColumns(db);
+    let base = null;
+    try {
+      base = await env.BILLING_DB.prepare(
+        "SELECT product_id, status, metadata_json, email, stripe_session_id FROM billing_payments WHERE access_token=?"
+      )
+        .bind(token)
+        .first();
+    } catch {
+      return json({ ok: false, error: "verify_unavailable" }, 502);
+    }
+    let gid = "";
+    try {
+      gid = (JSON.parse((base && base.metadata_json) || "{}") || {}).gid || "";
+    } catch {
+      /* ignore malformed metadata */
+    }
+    if (!base || base.product_id !== PRODUCT_ID || base.status !== "paid" || gid !== id)
+      return json({ ok: false, error: "not_paid" }, 402);
+    // Already bought? Hand back the token, charge nothing.
+    const have = await db
+      .prepare("SELECT agepack_token, agepack_status FROM generations WHERE id=?")
+      .bind(id)
+      .first();
+    if (have && have.agepack_token && have.agepack_status !== "none") {
+      return json({ ok: true, already: true, agepack_token: have.agepack_token });
+    }
+    const testMode = String(base.stripe_session_id || "").startsWith("cs_test_");
+    let r;
+    try {
+      r = await fetch("https://mehyar.us/api/pay/upsell-charge", {
+        method: "POST",
+        headers: { "content-type": "application/json", "User-Agent": BROWSER_UA },
+        body: JSON.stringify({ base_token: token, product_id: "baby-peek-agepack", test: testMode }),
+        signal: AbortSignal.timeout(30000),
+      });
+    } catch {
+      return json({ ok: false, error: "upsell_unreachable" }, 502);
+    }
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok || !data.ok) {
+      const err = String((data && data.error) || "upsell_failed");
+      // SCA / no saved card: fall back to a regular hosted checkout
+      // session for the upsell SKU so the buyer can still complete it.
+      if (err === "requires_action" || err === "no_saved_card") {
+        return json({ ok: false, error: err, fallback: true });
+      }
+      return json({ ok: false, error: err }, 502);
+    }
+    const agepackToken = String(data.agepack_token || data.token || "");
+    if (!/^[0-9a-f]{64}$/.test(agepackToken))
+      return json({ ok: false, error: "upsell_failed" }, 502);
+    await db
+      .prepare("UPDATE generations SET agepack_token=? WHERE id=?")
+      .bind(agepackToken, id)
+      .run();
+    if (await claimAgepack(db, id)) {
+      ctx.waitUntil(runAgepack(env, id));
+    }
+    return json({ ok: true, already: !!data.already, agepack_token: agepackToken });
+  }
+
+  // POST /api/agepack-fulfill — server-to-server trigger from the central
+  // billing worker after a baby-peek-agepack payment is marked paid
+  // (webhook fallback session path; the one-click path triggers via
+  // /api/upsell). Verifies the token against the central ledger, then
+  // atomically claims generation. Idempotent: replays are no-ops.
+  if (path === "/api/agepack-fulfill" && request.method === "POST") {
+    const body = await request.json().catch(() => ({}));
+    const gid = String(body.gid || "");
+    const token = String(body.token || "").slice(0, 128);
+    if (!/^[0-9a-f]{32}$/.test(gid) || !/^[0-9a-f]{64}$/.test(token))
+      return json({ ok: false, error: "bad_request" }, 400);
+    await ensureFunnelColumns(db);
+    let pay = null;
+    try {
+      pay = await env.BILLING_DB.prepare(
+        "SELECT product_id, status, metadata_json FROM billing_payments WHERE access_token=?"
+      )
+        .bind(token)
+        .first();
+    } catch {
+      return json({ ok: false, error: "verify_unavailable" }, 502);
+    }
+    let pgid = "";
+    try {
+      pgid = (JSON.parse((pay && pay.metadata_json) || "{}") || {}).gid || "";
+    } catch {
+      /* ignore malformed metadata */
+    }
+    if (!pay || pay.product_id !== "baby-peek-agepack" || pay.status !== "paid" || pgid !== gid)
+      return json({ ok: false, error: "not_paid" }, 402);
+    await db
+      .prepare("UPDATE generations SET agepack_token=? WHERE id=? AND (agepack_token IS NULL OR agepack_token != ?)")
+      .bind(token, gid, token)
+      .run();
+    if (await claimAgepack(db, gid)) {
+      ctx.waitUntil(runAgepack(env, gid));
+    }
+    return json({ ok: true });
+  }
+
+  // POST /api/checkout-agepack — hosted-checkout fallback for the upsell
+  // (used when the one-click charge can't run: SCA cards, no saved card).
+  // Same trust posture as /api/checkout: price from billing_products.
+  if (path === "/api/checkout-agepack" && request.method === "POST") {
+    const body = await request.json().catch(() => ({}));
+    const id = String(body.id || "");
+    const email = String(body.email || "").toLowerCase().trim();
+    if (!/^[0-9a-f]{32}$/.test(id)) return json({ ok: false, error: "bad_id" }, 400);
+    if (!EMAIL_RE.test(email)) return json({ ok: false, error: "invalid_email" }, 400);
+    const row = await db.prepare("SELECT id FROM generations WHERE id=?").bind(id).first();
+    if (!row) return json({ ok: false, error: "unknown_id" }, 404);
+    const payload = { product_id: "baby-peek-agepack", email, params: { gid: id } };
+    if (body.test === true) payload.test = true; // QA only; live UI never sends this
+    let r;
+    try {
+      r = await fetch(CHECKOUT_URL, {
+        method: "POST",
+        headers: { "content-type": "application/json", "User-Agent": BROWSER_UA },
+        body: JSON.stringify(payload),
+        signal: AbortSignal.timeout(20000),
+      });
+    } catch {
+      return json({ ok: false, error: "checkout_unreachable" }, 502);
+    }
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok || !data.ok || !data.checkout_url)
+      return json({ ok: false, error: "checkout_failed" }, 502);
+    return json({ ok: true, checkout_url: data.checkout_url });
+  }
+
   // GET /api/extras/<id>?token= — Deluxe Pack status + image URLs (token-gated)
+  // Token may be the Deluxe access_token OR the Age Progression Pack
+  // agepack_token — both belong to the same buyer. v3/v4 (Couple Pack bump)
+  // are included only when bump_paid=1; agepack items only when the upsell
+  // was purchased (agepack_token set).
   m = path.match(/^\/api\/extras\/([0-9a-f]{32})$/);
   if (m && request.method === "GET") {
     const token = url.searchParams.get("token") || "";
+    await ensureFunnelColumns(db);
     const row = await db
       .prepare(
-        "SELECT access_token, extras_status, extras_json FROM generations WHERE id=?"
+        "SELECT access_token, agepack_token, extras_status, extras_json, " +
+          "agepack_status, agepack_json, bump_paid FROM generations WHERE id=?"
       )
       .bind(m[1])
       .first();
-    if (!row || !row.access_token || row.access_token !== token)
-      return json({ ok: false, error: "locked" }, 403);
+    const tokenOk =
+      row &&
+      ((row.access_token && row.access_token === token) ||
+        (row.agepack_token && row.agepack_token === token));
+    if (!tokenOk) return json({ ok: false, error: "locked" }, 403);
     let items = [];
     try {
       items = JSON.parse(row.extras_json || "[]");
     } catch {
       /* keep empty */
     }
+    const bumpPaid = Number(row.bump_paid) === 1;
+    const agepackBought = !!(row.agepack_token || (row.agepack_status && row.agepack_status !== "none"));
+    let agepackItems = [];
+    try {
+      agepackItems = JSON.parse(row.agepack_json || "[]");
+    } catch {
+      /* keep empty */
+    }
+    const labelFor = (kind) =>
+      kind === "v1" ? "Variation 1"
+      : kind === "v2" ? "Variation 2"
+      : kind === "v3" ? "Couple Pack — Variation 3"
+      : kind === "v4" ? "Couple Pack — Variation 4"
+      : kind === "age5" ? "Your baby at 5"
+      : kind === "age15" ? "Your baby at 15"
+      : kind === "a1" ? "Your baby at 1"
+      : kind === "a3" ? "Your baby at 3"
+      : kind === "a10" ? "Your baby at 10"
+      : kind === "a20" ? "Your baby at 20"
+      : kind;
+    const toItem = (it) => ({
+      kind: it.kind,
+      label: labelFor(it.kind),
+      url: `/api/extras-img/${m[1]}/${it.kind}?token=${encodeURIComponent(token)}`,
+    });
+    const out = (Array.isArray(items) ? items : [])
+      .filter((it) => it.kind === "v1" || it.kind === "v2" || it.kind === "age5" || it.kind === "age15" || ((it.kind === "v3" || it.kind === "v4") && bumpPaid))
+      .map(toItem);
+    if (agepackBought && row.agepack_status === "ready") {
+      for (const it of (Array.isArray(agepackItems) ? agepackItems : [])) {
+        if (it && typeof it.kind === "string") out.push(toItem(it));
+      }
+    }
     return json({
       ok: true,
       status: row.extras_status || "none",
-      items: (Array.isArray(items) ? items : []).map((it) => ({
-        kind: it.kind,
-        label:
-          it.kind === "v1"
-            ? "Variation 1"
-            : it.kind === "v2"
-              ? "Variation 2"
-              : it.kind === "age5"
-                ? "Your baby at 5"
-                : "Your baby at 15",
-        url: `/api/extras-img/${m[1]}/${it.kind}?token=${encodeURIComponent(token)}`,
-      })),
+      agepack: row.agepack_status || "none",
+      bump: bumpPaid,
+      items: out,
     });
   }
 
-  // GET /api/extras-img/<id>/<kind>?token= — one Deluxe Pack image (token-gated)
-  m = path.match(/^\/api\/extras-img\/([0-9a-f]{32})\/(v1|v2|age5|age15)$/);
+  // GET /api/extras-img/<id>/<kind>?token= — one Deluxe/Couple/AgePack image
+  // (token-gated: Deluxe token or AgePack token). v3/v4 additionally require
+  // the bump purchase; a1/a3/a10/a20 require the upsell purchase.
+  m = path.match(/^\/api\/extras-img\/([0-9a-f]{32})\/(v1|v2|v3|v4|age5|age15|a1|a3|a10|a20)$/);
   if (m && request.method === "GET") {
     const token = url.searchParams.get("token") || "";
+    await ensureFunnelColumns(db);
     const row = await db
-      .prepare("SELECT access_token FROM generations WHERE id=?")
+      .prepare(
+        "SELECT access_token, agepack_token, bump_paid, agepack_status FROM generations WHERE id=?"
+      )
       .bind(m[1])
       .first();
-    if (!row || !row.access_token || row.access_token !== token)
-      return json({ ok: false, error: "locked" }, 403);
-    const obj = await env.BABYPEEK_R2.get(`g/${m[1]}/${m[2]}.jpg`);
+    const tokenOk =
+      row &&
+      ((row.access_token && row.access_token === token) ||
+        (row.agepack_token && row.agepack_token === token));
+    if (!tokenOk) return json({ ok: false, error: "locked" }, 403);
+    const kind = m[2];
+    if ((kind === "v3" || kind === "v4") && Number(row.bump_paid) !== 1)
+      return json({ ok: false, error: "missing" }, 404);
+    if (kind[0] === "a" && kind !== "age5" && kind !== "age15" && !row.agepack_token)
+      return json({ ok: false, error: "missing" }, 404);
+    const obj = await env.BABYPEEK_R2.get(`g/${m[1]}/${kind}.jpg`);
     if (!obj) return json({ ok: false, error: "missing" }, 404);
     return new Response(obj.body, {
       headers: {

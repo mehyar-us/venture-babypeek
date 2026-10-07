@@ -14,7 +14,12 @@ CREATE TABLE IF NOT EXISTS generations (
   est_cost_usd REAL,                           -- published-rate inference cost estimate per render
   src TEXT,                                     -- render-source attribution (utm/src param threading, E18 measurement)
   extras_status TEXT NOT NULL DEFAULT 'none',  -- deluxe pack: none|processing|ready|error
-  extras_json TEXT                              -- [{kind, key}] for v1/v2/age5/age15
+  extras_json TEXT,                             -- [{kind, key}] for v1/v2/v3/v4/age5/age15
+  -- Funnel ladder (2026-10-06: $17 reprice + $9 bump + $27 upsell)
+  bump_paid INTEGER NOT NULL DEFAULT 0,         -- 1 = $9 Couple Pack bump bought (unlocks v3/v4)
+  agepack_token TEXT,                           -- $27 Age Progression Pack purchase token
+  agepack_status TEXT NOT NULL DEFAULT 'none', -- none|processing|ready|error
+  agepack_json TEXT                             -- [{kind, key}] for a1/a3/a10/a20
 );
 CREATE INDEX IF NOT EXISTS idx_gen_created ON generations(created_at);
 -- Free-first-render abuse-guard telemetry (E18): one row per UTC day.

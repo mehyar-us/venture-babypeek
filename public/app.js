@@ -1,4 +1,4 @@
-// BabyPeek frontend — upload → FREE portrait → deluxe pitch → $5 unlock → deluxe pack.
+// BabyPeek frontend — upload → FREE portrait → deluxe pitch → $17 unlock → deluxe pack.
 (function () {
   "use strict";
   const $ = (id) => document.getElementById(id);
@@ -182,7 +182,7 @@
     }
   });
 
-  // ---- unlock: email → centralized Stripe checkout ($5 Deluxe Pack) ----
+  // ---- unlock: email → centralized Stripe checkout ($17 Deluxe Pack + optional $9 bump) ----
   $("btn-unlock").addEventListener("click", async () => {
     const email = $("email").value.trim().toLowerCase();
     if (!EMAIL_RE.test(email)) { err("teaser-error", "Please enter a valid email address."); return; }
@@ -191,8 +191,12 @@
     const btn = $("btn-unlock");
     btn.disabled = true;
     btn.textContent = "Opening secure checkout…";
+    // Order bump: the checkbox starts UNCHECKED (no pre-checked add-ons).
+    const bump = $("bump") && $("bump").checked === true;
+    const total = bump ? 26.0 : 17.0;
     try {
       localStorage.setItem(LS_EMAIL, email);
+      localStorage.setItem("babypeek_bump", bump ? "1" : "0");
       await fetch("/api/email", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -204,28 +208,137 @@
         body: JSON.stringify({
           id: gid,
           email,
+          bump,
           attribution: window.MSRC ? window.MSRC.get() : undefined,
         }),
       });
       const d = await r.json();
       if (!d.ok || !d.checkout_url) throw new Error(d.error || "checkout_failed");
-      try { window.fbq && fbq("track", "InitiateCheckout", { value: 5.0, currency: "USD" }); } catch (e2) {}
+      try { window.fbq && fbq("track", "InitiateCheckout", { value: total, currency: "USD" }); } catch (e2) {}
       window.location.href = d.checkout_url;
     } catch (e) {
       err("teaser-error", "Checkout hiccup — please try again in a moment.");
     } finally {
       btn.disabled = false;
-      btn.textContent = "Unlock deluxe — $5";
+      btn.textContent = "Unlock deluxe — $17";
     }
   });
 
-  // ---- teaser CTA: scroll to the unlock card (same $5 checkout) ----
+  // ---- teaser CTA: scroll to the unlock card (same $17 checkout) ----
   const teaserBtn = $("btn-teaser-unlock");
   if (teaserBtn) {
     teaserBtn.addEventListener("click", () => {
       const target = $("btn-unlock");
       if (target) target.scrollIntoView({ behavior: "smooth", block: "center" });
     });
+  }
+
+  // ---- Age Progression Pack upsell ($27, one-tap) ----
+  // Offered once per generation, only when the upsell wasn't purchased.
+  // "No thanks" is a real decline (remembered per generation) — no dark
+  // patterns, no re-prompting.
+  const upsellShown = new Set();
+  function upsellDeclined(id) {
+    try { return localStorage.getItem("babypeek_upsell_no_" + id) === "1"; } catch { return false; }
+  }
+  function hideUpsell() {
+    const b = $("upsell-block");
+    if (b) b.hidden = true;
+  }
+  function maybeShowUpsell(id, token, agepackStatus) {
+    const b = $("upsell-block");
+    if (!b || upsellShown.has(id)) return;
+    if (agepackStatus && agepackStatus !== "none") return; // already bought
+    if (upsellDeclined(id)) return;
+    upsellShown.add(id);
+    b.hidden = false;
+  }
+  const btnUpsellYes = $("btn-upsell-yes");
+  if (btnUpsellYes) {
+    btnUpsellYes.addEventListener("click", async () => {
+      if (!gid) return;
+      const token = deluxeToken || new URLSearchParams(window.location.search).get("token");
+      if (!token) { err("upsell-error", "Session expired — please unlock again from your email receipt."); return; }
+      err("upsell-error", "");
+      btnUpsellYes.disabled = true;
+      btnUpsellYes.textContent = "Adding…";
+      try {
+        const r = await fetch("/api/upsell", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ id: gid, token }),
+        });
+        const d = await r.json().catch(() => ({}));
+        if (d.ok) {
+          // One-tap charge done. The 4 age portraits generate in the
+          // background; the extras poll picks them up.
+          $("upsell-status").textContent = "🎬 Age Progression Pack added — dreaming up your baby at 1, 3, 10 & 20…";
+          $("upsell-status").hidden = false;
+          btnUpsellYes.hidden = true;
+          const noBtn = $("btn-upsell-no");
+          if (noBtn) noBtn.hidden = true;
+          try { window.fbq && fbq("track", "Purchase", { value: 27.0, currency: "USD" }); } catch (e2) {}
+          if (gid) { try { localStorage.setItem("babypeek_upsell_yes_" + gid, "1"); } catch {} }
+          return;
+        }
+        if (d.fallback) {
+          // Card needs the buyer present (or no saved card): regular
+          // hosted checkout for the upsell SKU.
+          const em = localStorage.getItem(LS_EMAIL) || "";
+          const cr = await fetch("/api/checkout-agepack", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ id: gid, email: em }),
+          });
+          const cd = await cr.json().catch(() => ({}));
+          if (cd.ok && cd.checkout_url) {
+            window.location.href = cd.checkout_url;
+            return;
+          }
+          throw new Error(cd.error || "checkout_failed");
+        }
+        throw new Error(d.error || "upsell_failed");
+      } catch (e) {
+        err("upsell-error", "That didn't go through — your card wasn't charged. Please try again.");
+      } finally {
+        btnUpsellYes.disabled = false;
+        btnUpsellYes.textContent = "Yes, add it — $27";
+      }
+    });
+  }
+  const btnUpsellNo = $("btn-upsell-no");
+  if (btnUpsellNo) {
+    btnUpsellNo.addEventListener("click", () => {
+      hideUpsell();
+      if (gid) { try { localStorage.setItem("babypeek_upsell_no_" + gid, "1"); } catch {} }
+    });
+  }
+  // Fallback-checkout return: ?agepack_token= → confirm + show progress.
+  let upsellToken = null;
+  let deluxeToken = null;
+  async function agepackFromUrl() {
+    const q = new URLSearchParams(window.location.search);
+    const at = q.get("agepack_token");
+    if (!at) return false;
+    try {
+      const r = await fetch("/api/agepack-redeem", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ agepack_token: at }),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (!d.ok || !d.gid) return false;
+      gid = d.gid;
+      localStorage.setItem(LS_GID, gid);
+      upsellToken = at;
+      show("view-unlocked");
+      $("extras-status").textContent = "🎬 Age Progression Pack confirmed — dreaming up your baby at 1, 3, 10 & 20…";
+      pollExtras(gid, at);
+      history.replaceState(null, "", window.location.pathname);
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   // ---- return from Stripe: ?token= → redeem → deluxe pack ----
@@ -255,9 +368,20 @@
           clearInterval(extrasTimer); extrasTimer = null;
           statusEl.textContent = "Your bonus portraits are here ✨";
           renderExtras(s.items);
+          // Age Progression Pack upsell ($27): offer once, only when not
+          // already purchased/declined for this generation.
+          maybeShowUpsell(id, token, s.agepack);
         } else if (s.ok && s.status === "error") {
           clearInterval(extrasTimer); extrasTimer = null;
           statusEl.textContent = "The bonus portraits stumbled — your portrait + HD download above are yours. Try the deluxe pack again in a bit.";
+        } else if (s.ok && s.agepack && s.agepack !== "none") {
+          // Upsell purchased meanwhile (e.g. fallback checkout): refresh the
+          // grid to include the age-progression portraits when ready.
+          if (s.agepack === "ready" && s.items && s.items.length) {
+            statusEl.textContent = "Your bonus portraits are here ✨";
+            renderExtras(s.items);
+          }
+          hideUpsell();
         }
       } catch { /* keep polling */ }
     };
@@ -278,6 +402,7 @@
       });
       const rd = await rr.json().catch(() => ({}));
       if (!rd.ok) return false;
+      deluxeToken = token;
       const src = "/api/full/" + id + "?token=" + encodeURIComponent(token);
       $("full-img").src = src;
       $("btn-download").href = src + "&download=1";
@@ -287,7 +412,8 @@
       // Pixel-side signal closes the D1-only attribution gap for the 10/7 kill clock.
       if (!purchaseFired.has(id)) {
         purchaseFired.add(id);
-        try { window.fbq && fbq("track", "Purchase", { value: 5.0, currency: "USD" }); } catch {}
+        const pv = (function () { try { return localStorage.getItem("babypeek_bump") === "1" ? 26.0 : 17.0; } catch { return 17.0; } })();
+        try { window.fbq && fbq("track", "Purchase", { value: pv, currency: "USD" }); } catch {}
       }
       // clean the URL (keep the token out of shared links)
       history.replaceState(null, "", window.location.pathname);
@@ -380,4 +506,5 @@
   }
 
   redeemFromUrl();
+  agepackFromUrl();
 })();

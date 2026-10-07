@@ -3,7 +3,7 @@
 **See your future baby.** Upload two parent photos → AI generates a
 photorealistic newborn portrait blending both parents' traits.
 
-Live: **https://baby.mehyar.us** · $5 unlock via centralized Stripe checkout.
+Live: **https://baby.mehyar.us** · $17 Deluxe unlock + $9 Couple Pack order bump + $27 Age Progression Pack one-click upsell via centralized Stripe checkout.
 
 ## How it works
 
@@ -19,9 +19,16 @@ Live: **https://baby.mehyar.us** · $5 unlock via centralized Stripe checkout.
      actively sharpens faces no matter how hard a prompt begs for blur, so
      a "blurred face" teaser was abandoned after live testing.)
 4. **Email capture** before the paywall (stored on the generation row).
-5. **$5 checkout** through the centralized mehyar-web Stripe endpoint
+5. **$17 checkout** through the centralized mehyar-web Stripe endpoint
    (`POST mehyar.us/api/pay/checkout`, product `baby-peek`). Price comes
    from the DB; `params.gid` is stored in `billing_payments.metadata_json`.
+   Optional `$9` order bump (product `baby-peek-bump`, `params.bump=true`)
+   adds a second line item on the same session; `params.save_card=true`
+   keeps the card on file for the one-click upsell.
+6. **$27 one-click upsell** — `POST /api/upsell` verifies the paid Deluxe
+   purchase, then calls `mehyar.us/api/pay/upsell-charge` which charges the
+   saved card off-session (product `baby-peek-agepack`). Fallback: hosted
+   checkout session when the card needs the buyer present.
 6. **Redeem** — `POST /api/redeem` verifies the token **server-to-server**
    against the central billing D1 (`BILLING_DB` binding → `mehyar_leads_prod`):
    token must belong to a `paid` `baby-peek` payment whose metadata `gid`
@@ -40,7 +47,8 @@ only the generated images live in R2 (`babypeek-images`).
 - Workers AI: `@cf/meta/llama-3.2-11b-vision-instruct`,
   `@cf/black-forest-labs/flux-1-schnell`
 - Billing: centralized Stripe on mehyar-web (`billing_products` /
-  `billing_payments`), product id `baby-peek`, $5.00 USD
+  `billing_payments`), products `baby-peek` ($17.00), `baby-peek-bump` ($9.00),
+  `baby-peek-agepack` ($27.00) USD
 - Deploy: GitHub Actions → `baby.mehyar.us` (never `wrangler pages deploy`
   from a repo with `[vars]`)
 
