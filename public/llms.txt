@@ -1,22 +1,22 @@
 # BabyPeek
 
-BabyPeek is an AI future baby photo generator by MehyarSoft LLC. Upload two parent photos and it dreams up a photorealistic portrait of what your baby could look like — a free sneak peek instantly, then a $5 one-time unlock for the full high-resolution portrait with instant download.
+BabyPeek is an AI future baby photo generator by MehyarSoft LLC. Upload two parent photos and it dreams up a photorealistic portrait of what your baby could look like — a free sneak peek instantly, then a $17 one-time unlock for the Deluxe Pack — two bonus variations, age-progression portraits (baby at 5 and 15), and the full-resolution HD download — with instant download. Optional add-ons: the $9 Couple Pack at checkout and the $27 Age Progression Pack one-click upsell after unlock.
 
 ## Key pages
 
-- / — landing page with the generator, free teaser, and $5 Stripe checkout
+- / — landing page with the generator, free teaser, and $17 Stripe checkout
 - /privacy/ — privacy policy: what is collected, what is never stored, how to unsubscribe
-- /terms/ — terms of service: entertainment-only disclaimer, the $5 unlock, acceptable use
-- /ai-baby-photo-guide/ — evergreen GEO guide: how AI baby photo generators work, FAQ (accuracy, photo safety, free vs $5, shareability), parent→baby example set, CTA to the free teaser
+- /terms/ — terms of service: entertainment-only disclaimer, the $17 Deluxe Pack, acceptable use
+- /ai-baby-photo-guide/ — evergreen GEO guide: how AI baby photo generators work, FAQ (accuracy, photo safety, free vs $17, shareability), parent→baby example set, CTA to the free teaser
 
 ## Pricing
 
-$5 one-time via Stripe, through the centralized https://mehyar.us/api/pay/checkout. The AI teaser (faceless sneak peek) is free; unlocking the full portrait is a single payment with no subscription. All sales final on instant digital delivery; technical failures are made right via info@mehyar.us.
+$17 one-time via Stripe, through the centralized https://mehyar.us/api/pay/checkout. The free sneak peek is free; the $17 Deluxe Pack (2 bonus variations, age progression at 5 and 15, HD download) is a single payment with no subscription. Optional $9 Couple Pack (checkout order bump) and $27 Age Progression Pack (post-unlock one-click upsell, baby at 1/3/10/20). All sales final on instant digital delivery; technical failures are made right via info@mehyar.us.
 
 ## API
 
 - POST /api/generate — multipart { photo1, photo2 } → generation id + free teaser image. KV rate-limited per IP.
-- POST /api/checkout — { email } → Stripe checkout session for the $5 unlock.
+- POST /api/checkout — { email } → Stripe checkout session for the $17 Deluxe Pack unlock (product_id baby-peek; price from D1 billing_products). POST /api/checkout-agepack — one-click $27 upsell on the same card (product_id baby-peek-agepack).
 - POST /api/redeem — links the Stripe success token to a generation. Paid-token verification is server-to-server against the central billing ledger; idempotent.
 - GET /api/full/<id>?token= — the paid portrait, token-gated. Add ?download=1 to get it as an attachment.
 - GET /api/unsubscribe?token= — one-click unsubscribe confirm page (HMAC-signed token, no login).
