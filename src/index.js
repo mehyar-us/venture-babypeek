@@ -877,6 +877,32 @@ async function handleApi(request, env, ctx) {
     return json({ ok: true });
   }
 
+  // POST /api/extras-retry — client-driven single retry of failed extras (E18 fairness fix).
+  // Body: { id } (32-hex generation id). Atomic claim: error->processing only when
+  // extras_retries < 1. Idempotent: concurrent/second calls return {ok:true, retried:false}.
+  // Retries fire ONLY while the user still has the result page open (the exact population
+  // the close needs). Abandoned renders are never retried — zero wasted inference.
+  if (path === "/api/extras-retry" && request.method === "POST") {
+    const body = await request.json().catch(() => ({}));
+    const id = String(body.id || "");
+    if (!/^[0-9a-f]{32}$/.test(id)) return json({ ok: false, error: "bad_id" }, 400);
+    try {
+      const claim = await db.prepare(
+        "UPDATE generations SET extras_status='processing', " +
+        "extras_retries=COALESCE(extras_retries,0)+1 " +
+        "WHERE id=? AND extras_status='error' AND COALESCE(extras_retries,0)<1"
+      ).bind(id).run();
+      if (claim && claim.meta && claim.meta.changes === 1) {
+        ctx.waitUntil(runExtras(env, id));
+        return json({ ok: true, retried: true });
+      }
+      return json({ ok: true, retried: false });
+    } catch (e) {
+      console.error("extras-retry note: " + String((e && e.message) || e).slice(0, 200));
+      return json({ ok: true, retried: false });
+    }
+  }
+
   if (path === "/api/email" && request.method === "POST") {
     const body = await request.json().catch(() => ({}));
     const id = String(body.id || "");

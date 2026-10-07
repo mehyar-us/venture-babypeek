@@ -166,8 +166,22 @@
                     $("teaser-age15").src = "/api/teaser-img/" + gid + "/age15?t=" + Date.now();
                     $("teaser-block").hidden = false;
                   } else if (t.extras_status === "error") {
-                    clearInterval(teaserTimer); teaserTimer = null;
-                    // graceful: teaser stays hidden, the unlock card still stands
+                    if (!teaserRetried) {
+                      teaserRetried = true;
+                      // E18 fairness fix: one retry while the user is still here; keep polling
+                      fetch("/api/extras-retry", {
+                        method: "POST",
+                        headers: { "content-type": "application/json" },
+                        keepalive: true,
+                        body: JSON.stringify({ id: gid }),
+                      }).catch(() => {});
+                      retryPolls = 15; // 15 × 4s = 60s grace for the retry to land
+                    } else if (retryPolls > 0) {
+                      retryPolls--;
+                    } else {
+                      clearInterval(teaserTimer); teaserTimer = null;
+                      // graceful: teaser stays hidden, the unlock card still stands
+                    }
                   }
                 } catch { /* keep polling */ }
               }, 4000);
@@ -368,6 +382,7 @@
   // ---- return from Stripe: ?token= → redeem → deluxe pack ----
   let extrasTimer = null;
   let teaserTimer = null; // E18 close fix: blurred age-progression teaser poll
+  let teaserRetried = false, retryPolls = 0; // E18 fairness fix: client-driven single extras retry
   function renderExtras(items) {
     const grid = $("extras-grid");
     grid.innerHTML = "";

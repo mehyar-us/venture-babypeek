@@ -14,6 +14,7 @@ CREATE TABLE IF NOT EXISTS generations (
   est_cost_usd REAL,                           -- published-rate inference cost estimate per render
   src TEXT,                                     -- render-source attribution (utm/src param threading, E18 measurement)
   extras_status TEXT NOT NULL DEFAULT 'none',  -- deluxe pack: none|processing|ready|error
+  extras_retries INTEGER NOT NULL DEFAULT 0,   -- E18 fairness fix: client-driven single retry of failed extras
   extras_json TEXT,                             -- [{kind, key}] for v1/v2/v3/v4/age5/age15
   -- Funnel ladder (2026-10-06: $17 reprice + $9 bump + $27 upsell)
   bump_paid INTEGER NOT NULL DEFAULT 0,         -- 1 = $9 Couple Pack bump bought (unlocks v3/v4)
