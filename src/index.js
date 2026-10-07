@@ -122,7 +122,25 @@ async function recordFreeMetrics(db, costUsd) {
       );
     }
   } catch (e) {
-    console.error("free_metrics write failed:", e && e.message);
+    console.error("free_metrics note: " + String((e && e.message) || e).slice(0, 200));
+  }
+}
+
+// Cost-only variant: adds inference spend WITHOUT incrementing the render
+// count. Used for the Deluxe-extras pre-generation overhead (E18 close fix)
+// so free_metrics.renders keeps counting renders 1:1 for the 10/8 verdict.
+async function recordFreeCost(db, costUsd) {
+  try {
+    const day = new Date().toISOString().slice(0, 10);
+    await db
+      .prepare(
+        "INSERT INTO free_metrics (day, renders, est_cost_usd, alerted) VALUES (?, 0, ?, 0) " +
+          "ON CONFLICT(day) DO UPDATE SET est_cost_usd=est_cost_usd+excluded.est_cost_usd"
+      )
+      .bind(day, costUsd)
+      .run();
+  } catch (e) {
+    console.error("free_cost note: " + String((e && e.message) || e).slice(0, 200));
   }
 }
 
@@ -425,7 +443,9 @@ async function runFreePipeline(env, id, b64a, b64b, grantKey) {
         .run();
       if (claim && claim.meta && claim.meta.changes === 1) {
         const extraCost = await runExtras(env, id);
-        if (extraCost > 0) await recordFreeMetrics(db, extraCost);
+        // Cost-only: do NOT increment the render count (the E18 clock reads
+        // free_metrics.renders — one render = one count, extras are overhead).
+        if (extraCost > 0) await recordFreeCost(db, extraCost);
       }
     } catch (e2) {
       console.error(
