@@ -192,11 +192,25 @@
   });
 
   // ---- unlock: email → centralized Stripe checkout ($17 Deluxe Pack + optional $9 bump) ----
+  // E18 10/8 verdict instrumentation: unlock-intent beacons. Fire-and-forget,
+  // must never break the click path (wrapped, best-effort, no PII sent).
+  function beaconIntent(kind) {
+    try {
+      if (!gid || (kind !== "teaser" && kind !== "unlock")) return;
+      fetch("/api/intent", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        keepalive: true,
+        body: JSON.stringify({ id: gid, kind }),
+      }).catch(() => { /* best-effort */ });
+    } catch { /* best-effort */ }
+  }
   $("btn-unlock").addEventListener("click", async () => {
     const email = $("email").value.trim().toLowerCase();
     if (!EMAIL_RE.test(email)) { err("teaser-error", "Please enter a valid email address."); return; }
     if (!gid) { err("teaser-error", "Something went wrong — please regenerate."); return; }
     err("teaser-error", "");
+    beaconIntent("unlock");
     const btn = $("btn-unlock");
     btn.disabled = true;
     btn.textContent = "Opening secure checkout…";
@@ -237,6 +251,7 @@
   const teaserBtn = $("btn-teaser-unlock");
   if (teaserBtn) {
     teaserBtn.addEventListener("click", () => {
+      beaconIntent("teaser");
       const target = $("btn-unlock");
       if (target) target.scrollIntoView({ behavior: "smooth", block: "center" });
     });

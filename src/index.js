@@ -847,6 +847,36 @@ async function handleApi(request, env, ctx) {
   }
 
   // POST /api/email — capture email against a generation
+  // POST /api/intent — unlock-intent beacon (E18 10/8 verdict instrumentation).
+  // Fire-and-forget click telemetry for the free-result close rung:
+  // kind 'teaser' = the blurred-teaser CTA was clicked (scrolled to unlock card);
+  // kind 'unlock' = a valid-email $17 unlock attempt reached the checkout call.
+  // No PII: gid is the opaque render id; email is deliberately NOT stored here.
+  // Table is created lazily (same additive pattern as email_contact).
+  if (path === "/api/intent" && request.method === "POST") {
+    const body = await request.json().catch(() => ({}));
+    const id = String(body.id || "");
+    const kind = String(body.kind || "");
+    if (!/^[0-9a-f]{32}$/.test(id)) return json({ ok: false, error: "bad_id" }, 400);
+    if (kind !== "teaser" && kind !== "unlock") return json({ ok: false, error: "bad_kind" }, 400);
+    try {
+      await db.prepare(
+        `CREATE TABLE IF NOT EXISTS unlock_intents (
+           id INTEGER PRIMARY KEY AUTOINCREMENT,
+           gid TEXT NOT NULL,
+           kind TEXT NOT NULL,
+           src TEXT,
+           created_at INTEGER NOT NULL DEFAULT (strftime('%s','now'))
+        )`).run();
+      const row = await db.prepare("SELECT src FROM generations WHERE id=?").bind(id).first();
+      await db.prepare("INSERT INTO unlock_intents (gid, kind, src) VALUES (?,?,?)")
+        .bind(id, kind, row ? row.src : null).run();
+    } catch (e) {
+      console.error("intent note: " + String((e && e.message) || e).slice(0, 200));
+    }
+    return json({ ok: true });
+  }
+
   if (path === "/api/email" && request.method === "POST") {
     const body = await request.json().catch(() => ({}));
     const id = String(body.id || "");

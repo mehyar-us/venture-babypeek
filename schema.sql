@@ -29,3 +29,14 @@ CREATE TABLE IF NOT EXISTS free_metrics (
   est_cost_usd REAL NOT NULL DEFAULT 0,
   alerted INTEGER NOT NULL DEFAULT 0          -- soft alarm fired at >200 renders/day
 );
+-- Unlock-intent beacons (E18 10/8 verdict instrumentation, 2026-10-07):
+-- client-side click telemetry for the free-result close rung.
+-- kind='teaser' = blurred-teaser CTA clicked; kind='unlock' = valid-email $17
+-- unlock attempt reached the checkout call. NO PII: only the opaque gid.
+CREATE TABLE IF NOT EXISTS unlock_intents (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  gid TEXT NOT NULL,
+  kind TEXT NOT NULL,                        -- 'teaser' | 'unlock'
+  src TEXT,                                   -- render-source attribution, copied from generations
+  created_at INTEGER NOT NULL DEFAULT (strftime('%s','now'))
+);
