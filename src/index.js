@@ -403,10 +403,13 @@ function fullPortraitPrompt(features) {
   );
 }
 
-async function genImage(env, prompt, seed) {
-  const params = { prompt };
-  if (seed != null) params.seed = seed;
-  const out = await env.AI.run(IMAGE_MODEL, params);
+async function genImage(env, prompt) {
+  // NOTE (2026-10-06): Workers AI flux-1-schnell rejects a `seed` param
+  // ("Additional or unevaluated properties '/seed' not allowed") — the
+  // E18 commit's seed plumbing broke every deluxe-extras generation until
+  // this fix. Prompts already differ per job; FLUX is non-deterministic
+  // without a seed. Do NOT re-add seed without verifying the schema.
+  const out = await env.AI.run(IMAGE_MODEL, { prompt });
   return aiImageBytes(out);
 }
 
@@ -475,7 +478,6 @@ async function runExtras(env, id) {
       .first();
     const features =
       (row && row.features) || "a cute newborn baby's features";
-    const seed = () => Math.floor(Math.random() * 1000000000);
     const jobs = [
       [
         "v1",
@@ -501,7 +503,7 @@ async function runExtras(env, id) {
     ];
     const out = [];
     for (const [kind, prompt] of jobs) {
-      const bytes = await genImage(env, prompt, seed());
+      const bytes = await genImage(env, prompt);
       const key = `g/${id}/${kind}.jpg`;
       await env.BABYPEEK_R2.put(key, bytes, {
         httpMetadata: { contentType: "image/jpeg" },
