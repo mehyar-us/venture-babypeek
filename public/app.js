@@ -143,6 +143,25 @@
                 leadFired.add(gid);
                 try { window.fbq && fbq("track", "Lead"); } catch {}
               }
+              // Deluxe teaser (E18 close fix): the worker pre-generates the
+              // age-progression extras at free-render time. Reveal the blurred
+              // teaser block as soon as extras_status flips to ready.
+              if (teaserTimer) { clearInterval(teaserTimer); teaserTimer = null; }
+              $("teaser-block").hidden = true;
+              teaserTimer = setInterval(async () => {
+                try {
+                  const t = await (await fetch("/api/status/" + gid)).json();
+                  if (t.extras_status === "ready") {
+                    clearInterval(teaserTimer); teaserTimer = null;
+                    $("teaser-age5").src = "/api/teaser-img/" + gid + "/age5?t=" + Date.now();
+                    $("teaser-age15").src = "/api/teaser-img/" + gid + "/age15?t=" + Date.now();
+                    $("teaser-block").hidden = false;
+                  } else if (t.extras_status === "error") {
+                    clearInterval(teaserTimer); teaserTimer = null;
+                    // graceful: teaser stays hidden, the unlock card still stands
+                  }
+                } catch { /* keep polling */ }
+              }, 4000);
             };
             probe.onerror = () => {
               show("view-upload");
@@ -200,8 +219,18 @@
     }
   });
 
+  // ---- teaser CTA: scroll to the unlock card (same $5 checkout) ----
+  const teaserBtn = $("btn-teaser-unlock");
+  if (teaserBtn) {
+    teaserBtn.addEventListener("click", () => {
+      const target = $("btn-unlock");
+      if (target) target.scrollIntoView({ behavior: "smooth", block: "center" });
+    });
+  }
+
   // ---- return from Stripe: ?token= → redeem → deluxe pack ----
   let extrasTimer = null;
+  let teaserTimer = null; // E18 close fix: blurred age-progression teaser poll
   function renderExtras(items) {
     const grid = $("extras-grid");
     grid.innerHTML = "";

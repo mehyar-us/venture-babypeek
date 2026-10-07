@@ -411,6 +411,28 @@ async function runFreePipeline(env, id, b64a, b64b, grantKey) {
       .bind(features, fullKey, cost, id)
       .run();
     await recordFreeMetrics(db, cost);
+    // E18 close fix (2026-10-06): pre-generate the Deluxe extras for free
+    // renders so the free-result page can show blurred age-progression
+    // teasers (the close mechanic). Atomic claim so a concurrent redeem
+    // can't double-run; redeem skips regeneration when extras_status is
+    // not 'none'/'error', so a buyer gets a near-instant unlock.
+    try {
+      const claim = await db
+        .prepare(
+          "UPDATE generations SET extras_status='processing' WHERE id=? AND extras_status='none'"
+        )
+        .bind(id)
+        .run();
+      if (claim && claim.meta && claim.meta.changes === 1) {
+        const extraCost = await runExtras(env, id);
+        if (extraCost > 0) await recordFreeMetrics(db, extraCost);
+      }
+    } catch (e2) {
+      console.error(
+        "free extras pre-gen note: " +
+          String((e2 && e2.message) || e2).slice(0, 200)
+      );
+    }
   } catch (e) {
     const msg = String((e && e.message) || e).slice(0, 300);
     await db
@@ -473,6 +495,7 @@ async function runExtras(env, id) {
       )
       .bind(JSON.stringify(out), cost, id)
       .run();
+    return cost;
   } catch (e) {
     const msg = String((e && e.message) || e).slice(0, 300);
     await db
@@ -481,6 +504,7 @@ async function runExtras(env, id) {
       )
       .bind(JSON.stringify({ error: msg }), id)
       .run();
+    return 0;
   }
 }
 
@@ -628,11 +652,16 @@ async function handleApi(request, env, ctx) {
   m = path.match(/^\/api\/status\/([0-9a-f]{32})$/);
   if (m && request.method === "GET") {
     const row = await db
-      .prepare("SELECT status, error FROM generations WHERE id=?")
+      .prepare("SELECT status, error, extras_status FROM generations WHERE id=?")
       .bind(m[1])
       .first();
     if (!row) return json({ ok: false, error: "unknown_id" }, 404);
-    return json({ ok: true, status: row.status, error: row.error || null });
+    return json({
+      ok: true,
+      status: row.status,
+      error: row.error || null,
+      extras_status: row.extras_status || "none",
+    });
   }
 
   // GET /api/teaser/<id> — public blurred teaser
@@ -645,6 +674,29 @@ async function handleApi(request, env, ctx) {
     if (!row || row.status !== "ready" || !row.teaser_key)
       return json({ ok: false, error: "not_ready" }, 404);
     const obj = await env.BABYPEEK_R2.get(row.teaser_key);
+    if (!obj) return json({ ok: false, error: "missing" }, 404);
+    return new Response(obj.body, {
+      headers: {
+        "content-type": "image/jpeg",
+        "cache-control": "public, max-age=3600",
+      },
+    });
+  }
+
+  // GET /api/teaser-img/<id>/<kind> — blurred age-progression previews for
+  // the free-result page's Deluxe teaser (E18 close fix, 2026-10-06).
+  // No token: same exposure level as /api/free/<id> (unguessable 32-hex id).
+  // The page applies a CSS blur + lock overlay; these are the buyer's own
+  // pre-generated Deluxe images, revealed in full after the $5 unlock.
+  m = path.match(/^\/api\/teaser-img\/([0-9a-f]{32})\/(age5|age15)$/);
+  if (m && request.method === "GET") {
+    const row = await db
+      .prepare("SELECT extras_status FROM generations WHERE id=?")
+      .bind(m[1])
+      .first();
+    if (!row || row.extras_status !== "ready")
+      return json({ ok: false, error: "not_ready" }, 404);
+    const obj = await env.BABYPEEK_R2.get(`g/${m[1]}/${m[2]}.jpg`);
     if (!obj) return json({ ok: false, error: "missing" }, 404);
     return new Response(obj.body, {
       headers: {
@@ -748,15 +800,17 @@ async function handleApi(request, env, ctx) {
     await db.prepare("UPDATE generations SET access_token=? WHERE id=?").bind(token, id).run();
     // Paid unlock = Deluxe Pack: auto-generate 2 bonus variations + age
     // progression (5 & 15) so the buyer gets what the pitch promised.
-    const cur = await db
-      .prepare("SELECT extras_status FROM generations WHERE id=?")
+    // Atomic claim (fixes the old read-then-write race): regenerates when
+    // the free pipeline's pre-gen errored, skips when it's already
+    // processing/ready (E18 close fix pre-generates extras at free-render
+    // time, so most buyers unlock instantly).
+    const claim = await db
+      .prepare(
+        "UPDATE generations SET extras_status='processing' WHERE id=? AND extras_status IN ('none','error')"
+      )
       .bind(id)
-      .first();
-    if (cur && cur.extras_status === "none") {
-      await db
-        .prepare("UPDATE generations SET extras_status='processing' WHERE id=?")
-        .bind(id)
-        .run();
+      .run();
+    if (claim && claim.meta && claim.meta.changes === 1) {
       ctx.waitUntil(runExtras(env, id));
     }
     return json({ ok: true });
