@@ -133,6 +133,10 @@
       }
       gid = d.id;
       localStorage.setItem(LS_GID, gid);
+      // E18 verdict 2026-10-08: FREE_FIRST=false reverted the free-first
+      // ladder. d.free===false = pay-mode: show the blurred teaser + $17
+      // unlock card (pre-E18 mechanic), not the free full portrait.
+      const freeMode = d.free !== false;
       pollTimer = setInterval(async () => {
         try {
           const s = await (await fetch("/api/status/" + gid)).json();
@@ -140,9 +144,26 @@
             clearInterval(pollTimer); clearInterval(msgTimer);
             // Free-first: the full portrait IS the render. Preload before
             // swapping views; a 404 means a legacy teaser-funnel row.
+            // Pay-mode: the teaser (tiny hand, no face) is the taste —
+            // the full portrait unlocks after the $17 checkout.
+            const imgPath = freeMode ? "/api/free/" : "/api/teaser/";
             const probe = new Image();
             probe.onload = () => {
-              $("free-img").src = "/api/free/" + gid + "?t=" + Date.now();
+              $("free-img").src = imgPath + gid + "?t=" + Date.now();
+              $("free-img").alt = freeMode
+                ? "Your future baby portrait — free AI render"
+                : "Sneak peek of your AI baby — unlock the Deluxe Pack to reveal the full portrait";
+              if (!freeMode) {
+                // Pay-mode copy: no free portrait promised, no share row.
+                const pill = document.querySelector("#view-free .pill");
+                if (pill) pill.textContent = "🔒 Your sneak peek is ready";
+                const h2 = document.querySelector("#view-free h2");
+                if (h2) h2.innerHTML = "One tiny hand. <em>One big reveal.</em>";
+                const lede = document.querySelector("#view-free p.lede");
+                if (lede) lede.textContent = "Our AI dreamed up your baby from your two photos. Unlock the Deluxe Pack ($17 one-time) to reveal the full portrait in HD — plus 2 bonus variations and your baby at 5 & 15.";
+                const shareRow = document.querySelector("#view-free .share-row");
+                if (shareRow) shareRow.hidden = true;
+              }
               const em = localStorage.getItem(LS_EMAIL);
               if (em) $("email").value = em;
               show("view-free");
