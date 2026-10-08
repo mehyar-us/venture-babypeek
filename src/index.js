@@ -24,6 +24,42 @@ const FREE_FIRST = false;
 const FREE_PER_IP_PER_24H = 1;
 const FREE_ALARM_PER_DAY = 200; // soft alarm threshold (see recordFreeMetrics)
 
+// ── Halloween seasonal mode (2026-10-08 — staged-spec fire condition 2) ─
+// HALLOWEEN_MODE=true adds 3 Halloween costume variations (c1/c2/c3: tiny
+// pumpkin king / little witch / ghost astronaut) to the Deluxe Pack bonus
+// class — seasonal close-fuel alongside age-progression + HD set. The
+// costumes ride the existing extras array: no schema change, gated by the
+// existing /api/extras filter, served by /api/extras-img. Cost: 3 extra
+// flux renders per paid unlock ≈ $0.0019 (each render ≈ $0.0006, under the
+// $0.002/render QA bar). Default OFF; flip to true + redeploy to enable.
+// Compliance: costumes are framed as fun/entertainment only (labels say
+// "costume"); the existing AI-generated portrait disclosure is untouched.
+const HALLOWEEN_MODE = false;
+
+function halloweenCostumeJobs(features) {
+  const base = `blending these family traits: ${features}`;
+  return [
+    [
+      "c1",
+      `Adorable newborn baby dressed as a tiny pumpkin king — plush orange pumpkin costume with a soft green leaf collar and a tiny golden crown, ` +
+        `${base}. Sweet happy expression, photorealistic, ultra detailed skin, ` +
+        `centered head-and-shoulders portrait, warm autumn studio backdrop with soft bokeh pumpkins`,
+    ],
+    [
+      "c2",
+      `Adorable newborn baby dressed as a little witch — soft purple wizard hat with a tiny bow, ` +
+        `${base}. Playful expression, photorealistic, ultra detailed skin, ` +
+        `centered head-and-shoulders portrait, starry midnight-blue backdrop with a gentle moonlight glow`,
+    ],
+    [
+      "c3",
+      `Adorable newborn baby dressed as a ghost astronaut — tiny white astronaut suit with a soft transparent bubble helmet, floating among friendly cartoon stars, ` +
+        `${base}. Sweet peaceful expression, photorealistic, ultra detailed skin, ` +
+        `centered head-and-shoulders portrait, pastel space backdrop`,
+    ],
+  ];
+}
+
 // Inference cost model (published Cloudflare rates, 2026-10-06 — logged as
 // estimates, not metered usage):
 //   flux-1-schnell: 4.80 neurons per 512x512 tile + 9.60 neurons per step
@@ -536,6 +572,10 @@ async function runExtras(env, id) {
           `Gentle smile, cozy white wrap, bright airy studio light, photorealistic, head-and-shoulders`,
       ],
     ];
+    // Halloween seasonal mode (2026-10-08): 3 costume variations join the
+    // Deluxe Pack bonus class when the flag is on. Pre-generated with the
+    // rest so the unlock is instant; cost is logged like every other job.
+    if (HALLOWEEN_MODE) jobs.push(...halloweenCostumeJobs(features));
     const out = [];
     for (const [kind, prompt] of jobs) {
       const bytes = await genImage(env, prompt);
@@ -1268,6 +1308,9 @@ async function handleApi(request, env, ctx) {
       : kind === "v4" ? "Couple Pack — Variation 4"
       : kind === "age5" ? "Your baby at 5"
       : kind === "age15" ? "Your baby at 15"
+      : kind === "c1" ? "Tiny pumpkin king costume 🎃"
+      : kind === "c2" ? "Little witch costume 🧙"
+      : kind === "c3" ? "Ghost astronaut costume 👻"
       : kind === "a1" ? "Your baby at 1"
       : kind === "a3" ? "Your baby at 3"
       : kind === "a10" ? "Your baby at 10"
@@ -1279,7 +1322,10 @@ async function handleApi(request, env, ctx) {
       url: `/api/extras-img/${m[1]}/${it.kind}?token=${encodeURIComponent(token)}`,
     });
     const out = (Array.isArray(items) ? items : [])
-      .filter((it) => it.kind === "v1" || it.kind === "v2" || it.kind === "age5" || it.kind === "age15" || ((it.kind === "v3" || it.kind === "v4") && bumpPaid))
+      .filter((it) => it.kind === "v1" || it.kind === "v2" || it.kind === "age5" || it.kind === "age15" ||
+        // Halloween seasonal costume class (c1/c2/c3) — Deluxe Pack bonus.
+        it.kind === "c1" || it.kind === "c2" || it.kind === "c3" ||
+        ((it.kind === "v3" || it.kind === "v4") && bumpPaid))
       .map(toItem);
     if (agepackBought && row.agepack_status === "ready") {
       for (const it of (Array.isArray(agepackItems) ? agepackItems : [])) {
@@ -1297,8 +1343,9 @@ async function handleApi(request, env, ctx) {
 
   // GET /api/extras-img/<id>/<kind>?token= — one Deluxe/Couple/AgePack image
   // (token-gated: Deluxe token or AgePack token). v3/v4 additionally require
-  // the bump purchase; a1/a3/a10/a20 require the upsell purchase.
-  m = path.match(/^\/api\/extras-img\/([0-9a-f]{32})\/(v1|v2|v3|v4|age5|age15|a1|a3|a10|a20)$/);
+  // the bump purchase; a1/a3/a10/a20 require the upsell purchase. c1/c2/c3
+  // are the Halloween costume class (Deluxe Pack bonus when HALLOWEEN_MODE).
+  m = path.match(/^\/api\/extras-img\/([0-9a-f]{32})\/(v1|v2|v3|v4|age5|age15|c1|c2|c3|a1|a3|a10|a20)$/);
   if (m && request.method === "GET") {
     const token = url.searchParams.get("token") || "";
     await ensureFunnelColumns(db);
@@ -1347,6 +1394,13 @@ async function handleApi(request, env, ctx) {
     if (url.searchParams.get("download") === "1")
       headers["content-disposition"] = 'attachment; filename="babypeek-baby.jpg"';
     return new Response(obj.body, { headers });
+  }
+
+  // GET /api/config — public funnel flags for the frontend. No PII, no
+  // identifiers. Lets the page gate seasonal copy on HALLOWEEN_MODE without
+  // a second deploy of the static assets when the flag flips.
+  if (path === "/api/config" && request.method === "GET") {
+    return json({ ok: true, halloween: HALLOWEEN_MODE });
   }
 
   // GET /api/unsubscribe?token=… — one-click unsubscribe confirm page.

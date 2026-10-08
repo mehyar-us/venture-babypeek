@@ -9,6 +9,34 @@
 
   let photo1 = null, photo2 = null, gid = localStorage.getItem(LS_GID) || null;
 
+  // Halloween seasonal mode — server-side flag gates the costume-bonus copy
+  // family. Fetched from /api/config on load; defaults OFF (safe): if the
+  // fetch fails or the flag is off, the page is exactly the pre-pivot page.
+  let HALLOWEEN = false;
+  let payMode = false; // true once a render completes in pay-mode (FREE_FIRST=false)
+  function deluxePitchLede() {
+    const base = "Our AI dreamed up your baby from your two photos. Unlock the Deluxe Pack ($17 one-time) to reveal the full portrait in HD — plus 2 bonus variations and your baby at 5 & 15.";
+    return HALLOWEEN ? base + " PLUS 3 Halloween costume looks 🎃." : base;
+  }
+  function applyHalloweenCopy() {
+    if (!HALLOWEEN) return;
+    const li = $("deluxe-halloween");
+    if (li) li.hidden = false;
+    const ts = $("teaser-halloween");
+    if (ts) ts.hidden = false;
+    const pl = $("price-halloween");
+    if (pl) pl.hidden = false;
+    // The pay-mode lede may already have been set at render-ready — re-apply.
+    if (payMode) {
+      const lede = document.querySelector("#view-free p.lede");
+      if (lede) lede.textContent = deluxePitchLede();
+    }
+  }
+  fetch("/api/config", { cache: "no-store" })
+    .then((r) => r.json())
+    .then((d) => { if (d && d.halloween) { HALLOWEEN = true; applyHalloweenCopy(); } })
+    .catch(() => {});
+
   // Meta Purchase events — fired once per paid unlock (dedupe per generation id).
   const purchaseFired = new Set();
 
@@ -153,6 +181,7 @@
               $("free-img").alt = freeMode
                 ? "Your future baby portrait — free AI render"
                 : "Sneak peek of your AI baby — unlock the Deluxe Pack to reveal the full portrait";
+              payMode = !freeMode;
               if (!freeMode) {
                 // Pay-mode copy: no free portrait promised, no share row.
                 const pill = document.querySelector("#view-free .pill");
@@ -160,7 +189,7 @@
                 const h2 = document.querySelector("#view-free h2");
                 if (h2) h2.innerHTML = "One tiny hand. <em>One big reveal.</em>";
                 const lede = document.querySelector("#view-free p.lede");
-                if (lede) lede.textContent = "Our AI dreamed up your baby from your two photos. Unlock the Deluxe Pack ($17 one-time) to reveal the full portrait in HD — plus 2 bonus variations and your baby at 5 & 15.";
+                if (lede) lede.textContent = deluxePitchLede();
                 const shareRow = document.querySelector("#view-free .share-row");
                 if (shareRow) shareRow.hidden = true;
               }
@@ -496,9 +525,15 @@
   function wireShare(btnId, firedFlag) {
     const shareBtn = $(btnId);
     if (!shareBtn) return;
+    // Halloween copy family: "AI made my Halloween baby 🎃 — see yours:
+    // baby.mehyar.us" when the seasonal flag is on; the evergreen line stays
+    // the default. Resolved at click time (config fetch may land late).
+    const shareTextFor = () => HALLOWEEN
+      ? "AI made my Halloween baby 🎃 — see yours: baby.mehyar.us"
+      : "I just tried BabyPeek — my baby's first AI portrait was FREE 👶";
     shareBtn.addEventListener("click", async () => {
       const shareUrl = "https://baby.mehyar.us/?utm_source=babypeek_share&utm_medium=webshare";
-      const shareText = "I just tried BabyPeek — my baby's first AI portrait was FREE 👶";
+      const shareText = shareTextFor();
       let method = "none";
       try {
         if (navigator.share) {
