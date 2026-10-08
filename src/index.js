@@ -34,7 +34,9 @@ const FREE_ALARM_PER_DAY = 200; // soft alarm threshold (see recordFreeMetrics)
 // $0.002/render QA bar). Default OFF; flip to true + redeploy to enable.
 // Compliance: costumes are framed as fun/entertainment only (labels say
 // "costume"); the existing AI-generated portrait disclosure is untouched.
-const HALLOWEEN_MODE = false;
+// ENABLED 2026-10-08 (second commit): staged-spec fire condition 2 met
+// (E18 free-first ladder killed, E18 funnel reverted to teaser→$17-unlock).
+const HALLOWEEN_MODE = true;
 
 function halloweenCostumeJobs(features) {
   const base = `blending these family traits: ${features}`;
