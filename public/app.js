@@ -151,7 +151,6 @@
               if (gid && !leadFired.has(gid)) {
                 leadFired.add(gid);
                 try { window.fbq && fbq("track", "Lead"); } catch {}
-                try { window.gtag && gtag("event", "free_render", { value: 0.34, currency: "USD" }); } catch {}
               }
               // Deluxe teaser (E18 close fix): the worker pre-generates the
               // age-progression extras at free-render time. Reveal the blurred
@@ -317,7 +316,6 @@
           const noBtn = $("btn-upsell-no");
           if (noBtn) noBtn.hidden = true;
           try { window.fbq && fbq("track", "Purchase", { value: 27.0, currency: "USD" }); } catch (e2) {}
-          try { window.gtag && gtag("event", "purchase", { value: 27.0, currency: "USD", transaction_id: id || gid }); } catch {}
           if (gid) { try { localStorage.setItem("babypeek_upsell_yes_" + gid, "1"); } catch {} }
           return;
         }
@@ -455,7 +453,6 @@
         purchaseFired.add(id);
         const pv = (function () { try { return localStorage.getItem("babypeek_bump") === "1" ? 26.0 : 17.0; } catch { return 17.0; } })();
         try { window.fbq && fbq("track", "Purchase", { value: pv, currency: "USD" }); } catch {}
-        try { window.gtag && gtag("event", "purchase", { value: pv, currency: "USD", transaction_id: gid }); } catch {}
       }
       // clean the URL (keep the token out of shared links)
       history.replaceState(null, "", window.location.pathname);
