@@ -16,11 +16,11 @@ const MAX_PHOTO_BYTES = 6 * 1024 * 1024;
 const RATE_LIMIT_PER_HOUR = 8;
 
 // ── Free-first-render ladder (2026-10-06, E18) ─────────────────────────
-// FREE_FIRST=true: a visitor's first render per IP per day is FREE (one AI
-// baby portrait, no payment, no account). The $17 unlock becomes the Deluxe
-// Pack: 2 bonus variations + age progression (5 & 15) + full-res HD download.
-// Set FREE_FIRST=false and redeploy to revert to the $17-before-taste funnel.
-const FREE_FIRST = true;
+// FREE_FIRST=false — REVERTED 2026-10-08 per the E18 48h verdict (40 free
+// renders, 0/22 paid unlocks, unlock_intents 0). $17-before-taste funnel:
+// payment before the first render. Set FREE_FIRST=true and redeploy to
+// re-enable the free-first ladder.
+const FREE_FIRST = false;
 const FREE_PER_IP_PER_24H = 1;
 const FREE_ALARM_PER_DAY = 200; // soft alarm threshold (see recordFreeMetrics)
 
