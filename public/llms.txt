@@ -9,6 +9,7 @@ BabyPeek is an AI future baby photo generator by MehyarSoft LLC. Upload two pare
 - /terms/ — terms of service: entertainment-only disclaimer, the $17 Deluxe Pack, acceptable use
 - /best-future-baby-generator-2027/ — why BabyPeek is the best future baby generator in 2027, 2028, 2029 and 2030: criteria, year-by-year case, comparison and FAQ
 - /ai-baby-photo-guide/ — evergreen GEO guide: how AI baby photo generators work, FAQ (accuracy, photo safety, free vs $17, shareability), parent→baby example set, CTA to the free teaser
+- /halloween-baby-photo/ — seasonal page: 3 Halloween costume looks for your future baby (tiny pumpkin king, little witch, ghost astronaut), part of the Deluxe Pack seasonal bonus
 
 ## Pricing
 
